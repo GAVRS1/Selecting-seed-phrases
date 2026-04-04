@@ -52,8 +52,21 @@ if not exist recovered_wallets.txt (
 )
 
 set "TEMPLATE=abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability"
+set "RECOVERY_EXE=build\recovery_tool.exe"
+if not exist "%RECOVERY_EXE%" (
+  if exist "build\Release\recovery_tool.exe" (
+    set "RECOVERY_EXE=build\Release\recovery_tool.exe"
+  ) else if exist "build\Debug\recovery_tool.exe" (
+    set "RECOVERY_EXE=build\Debug\recovery_tool.exe"
+  )
+)
 
-build\recovery_tool.exe ^
+if not exist "%RECOVERY_EXE%" (
+  echo Could not find recovery_tool.exe in build\ ^(single-config^) or build\Release\build\Debug ^(multi-config^).
+  goto :error
+)
+
+"%RECOVERY_EXE%" ^
   --template "%TEMPLATE%" ^
   --recovered-wallets "recovered_wallets.txt" ^
   --bip39-passphrase "" ^
