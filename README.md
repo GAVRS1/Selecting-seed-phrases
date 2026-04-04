@@ -16,7 +16,7 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - `bip39::MnemonicGenerator` for wildcard expansion and candidate filtering.
 - `chains::IChainModule` and per-chain modules (`btc`, `eth`, `sol`).
 - Real seed derivation via BIP-39 PBKDF2-HMAC-SHA512 and chain-specific key trees (BIP-32 for BTC/ETH, SLIP-0010 Ed25519 for SOL).
-- Ethereum addresses are intentionally prefixed with `edu_eth_` as an explicit training marker.
+- Ethereum addresses are output in canonical hex format with `0x` prefix.
 - `engine::Pipeline` and `engine::Matcher` for async candidate processing and address matching.
 - Per-chain deduplication: once a chain wallet is recovered, that chain is skipped for all next candidates.
 - Scanner-based balance checks for derived BTC/ETH/SOL addresses.
