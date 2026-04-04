@@ -2,6 +2,8 @@
 #include "common.hpp"
 
 #include <array>
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <regex>
@@ -44,6 +46,45 @@ std::string run_command(const std::string& command) {
     pclose(pipe);
     return output;
 }
+
+double parse_number(const std::string& raw) {
+    std::string normalized;
+    normalized.reserve(raw.size());
+
+    for (const char ch : raw) {
+        const unsigned char uch = static_cast<unsigned char>(ch);
+        if (std::isdigit(uch) != 0 || ch == '.' || ch == ',') {
+            normalized.push_back(ch);
+        }
+    }
+
+    if (normalized.empty()) {
+        return 0.0;
+    }
+
+    std::replace(normalized.begin(), normalized.end(), ',', '.');
+    return std::stod(normalized);
+}
+
+double parse_etherscan_balance_eth(const std::string& html) {
+    double best_value = 0.0;
+
+    const std::regex holdings_eth_pattern(
+        R"(id\s*=\s*"HoldingsETH"[^>]*>\s*([^<\s][^<]*)<)",
+        std::regex::icase);
+    for (std::sregex_iterator it(html.begin(), html.end(), holdings_eth_pattern), end; it != end; ++it) {
+        best_value = std::max(best_value, parse_number((*it)[1].str()));
+    }
+
+    const std::regex eth_value_pattern(
+        R"(<h4[^>]*>\s*Eth\s*Value\s*</h4>\s*([^<\n\r]*<[^>]*>\s*)*([^<]+)<)",
+        std::regex::icase);
+    for (std::sregex_iterator it(html.begin(), html.end(), eth_value_pattern), end; it != end; ++it) {
+        best_value = std::max(best_value, parse_number((*it)[2].str()));
+    }
+
+    return best_value;
+}
 } // namespace
 
 std::string EthereumModule::name() const { return "eth"; }
@@ -57,15 +98,7 @@ std::vector<std::string> EthereumModule::derive_addresses(
 }
 
 double EthereumModule::fetch_balance_coin(const std::string& address) {
-    const char* api_key = std::getenv("ETHERSCAN_API_KEY");
-    std::string key = api_key == nullptr ? "" : api_key;
-    if (key.empty()) {
-        key = "YourApiKeyToken";
-    }
-
-    const std::string url =
-        "https://api.etherscan.io/api?module=account&action=balance&address=" + address +
-        "&tag=latest&apikey=" + key;
+    const std::string url = "https://etherscan.io/address/" + address;
 
 #ifdef _WIN32
     std::string ps_url = url;
@@ -78,14 +111,7 @@ double EthereumModule::fetch_balance_coin(const std::string& address) {
     const std::string command = "curl -fsSL --max-time 10 '" + shell_escape_single_quote(url) + "'";
 #endif
     const std::string response = run_command(command);
-
-    std::smatch m;
-    if (!std::regex_search(response, m, std::regex("\"result\"\\s*:\\s*\"([0-9]+)\""))) {
-        return 0.0;
-    }
-
-    const long double wei = std::stold(m[1].str());
-    return static_cast<double>(wei / 1000000000000000000.0L);
+    return parse_etherscan_balance_eth(response);
 }
 
 } // namespace chains
