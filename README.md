@@ -51,3 +51,17 @@ ctest --test-dir build --output-on-failure
 > Notes:
 > - `--target-addresses` is now optional.
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
+
+## Быстрый запуск в Windows (.bat)
+
+1. Установите **CMake** и **Visual Studio Build Tools** с workload **Desktop development with C++**.
+2. Откройте **x64 Native Tools Command Prompt for VS** (или обычный `cmd`, если toolchain уже доступен).
+3. Перейдите в корень репозитория и запустите `run_project.bat`.
+4. При необходимости отредактируйте переменную `TEMPLATE` внутри `run_project.bat` под вашу seed-фразу (через запятую, `*` для неизвестных слов).
+
+Скрипт автоматически:
+- настраивает CMake в `build/`,
+- собирает проект,
+- запускает `recovery_tool.exe` (поддерживает пути `build\Release\...` и `build\...`).
+
+Если CMake не находит компилятор, скрипт выведет подсказки по установке toolchain.
