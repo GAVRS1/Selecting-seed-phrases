@@ -3,7 +3,9 @@
 #include "core/secure_buffer.hpp"
 #include "core/thread_pool.hpp"
 
+#include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 
 namespace engine {
@@ -25,6 +27,17 @@ std::vector<std::string> paths_for_module(const core::AppConfig& cfg, const std:
     if (name == "sol") return cfg.paths_sol;
     return {};
 }
+
+std::string mnemonic_to_string(const core::Mnemonic& mnemonic) {
+    std::ostringstream joined;
+    for (std::size_t i = 0; i < mnemonic.size(); ++i) {
+        joined << mnemonic[i];
+        if (i + 1 < mnemonic.size()) {
+            joined << ' ';
+        }
+    }
+    return joined.str();
+}
 } // namespace
 
 Pipeline::Pipeline(const core::AppConfig& config,
@@ -35,6 +48,29 @@ Pipeline::Pipeline(const core::AppConfig& config,
 
 void Pipeline::register_chain(std::unique_ptr<chains::IChainModule> module) {
     modules_.push_back(std::move(module));
+}
+
+bool Pipeline::is_chain_recovered(const std::string& chain_name) {
+    std::lock_guard<std::mutex> lock(recovered_mutex_);
+    return recovered_chains_.contains(chain_name);
+}
+
+void Pipeline::mark_chain_recovered(const std::string& chain_name) {
+    std::lock_guard<std::mutex> lock(recovered_mutex_);
+    recovered_chains_.insert(chain_name);
+}
+
+void Pipeline::persist_recovered_wallet(const std::string& chain_name,
+                                        const std::string& address,
+                                        const core::Mnemonic& mnemonic) const {
+    std::ofstream out(config_.recovered_wallets_path, std::ios::app);
+    if (!out) {
+        throw std::runtime_error("Failed to open recovered wallets file: " + config_.recovered_wallets_path);
+    }
+
+    out << "chain: " << chain_name << '\n';
+    out << "address: " << address << '\n';
+    out << "mnemonic: " << mnemonic_to_string(mnemonic) << "\n\n";
 }
 
 void Pipeline::run() {
@@ -50,24 +86,48 @@ void Pipeline::run() {
             }
 
             auto seed = mnemonic_to_seed(mnemonic);
-            std::vector<std::future<bool>> futures;
+            struct ChainMatchResult {
+                std::string chain_name;
+                std::optional<std::string> matched_address;
+            };
+
+            std::vector<std::future<ChainMatchResult>> futures;
             futures.reserve(modules_.size());
 
             for (const auto& module : modules_) {
+                if (is_chain_recovered(module->name())) {
+                    continue;
+                }
                 auto paths = paths_for_module(config_, module->name());
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
-                    return matcher_.contains(derived);
+                    return ChainMatchResult{
+                        module_ptr->name(),
+                        matcher_.find_match(derived),
+                    };
                 }));
             }
 
-            for (auto& future : futures) {
-                if (future.get()) {
-                    matcher_.stop();
-                    std::cout << "Match found. Stop requested.\n";
-                    return true;
-                }
+            if (futures.empty()) {
+                matcher_.stop();
+                return true;
             }
+
+            for (auto& future : futures) {
+                auto result = future.get();
+                if (!result.matched_address.has_value()) {
+                    continue;
+                }
+
+                if (is_chain_recovered(result.chain_name)) {
+                    continue;
+                }
+
+                mark_chain_recovered(result.chain_name);
+                persist_recovered_wallet(result.chain_name, *result.matched_address, mnemonic);
+                std::cout << "Recovered " << result.chain_name << " wallet: " << *result.matched_address << '\n';
+            }
+
             return false;
         });
 }

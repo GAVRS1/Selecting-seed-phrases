@@ -7,6 +7,9 @@
 #include "engine/matcher.hpp"
 
 #include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace engine {
@@ -27,6 +30,14 @@ private:
     const bip39::MnemonicGenerator& generator_;
     Matcher& matcher_;
     std::vector<std::unique_ptr<chains::IChainModule>> modules_;
+    std::unordered_set<std::string> recovered_chains_;
+    std::mutex recovered_mutex_;
+
+    bool is_chain_recovered(const std::string& chain_name);
+    void mark_chain_recovered(const std::string& chain_name);
+    void persist_recovered_wallet(const std::string& chain_name,
+                                  const std::string& address,
+                                  const core::Mnemonic& mnemonic) const;
 };
 
 } // namespace engine

@@ -37,6 +37,8 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.paths_sol = split_csv(argv[++i]);
         } else if (arg == "--target-addresses" && i + 1 < argc) {
             cfg.target_addresses_path = argv[++i];
+        } else if (arg == "--recovered-wallets" && i + 1 < argc) {
+            cfg.recovered_wallets_path = argv[++i];
         } else if (arg == "--wordlist" && i + 1 < argc) {
             cfg.wordlist_path = argv[++i];
         } else if (arg == "--scan-limit" && i + 1 < argc) {

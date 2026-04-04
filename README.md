@@ -16,6 +16,8 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - `bip39::MnemonicGenerator` for wildcard expansion and candidate filtering.
 - `chains::IChainModule` and per-chain module skeletons (`btc`, `eth`, `sol`).
 - `engine::Pipeline` and `engine::Matcher` for async candidate processing and address matching.
+- Per-chain deduplication: once a chain wallet is recovered, that chain is skipped for all next candidates.
+- Automatic persistence of recovered wallets (`chain`, `address`, `mnemonic`) to a TXT file.
 - Basic CLI parser and executable entrypoint.
 - Minimal tests (`test_bip39`, `test_derivation`, `test_pipeline`).
 
@@ -33,6 +35,7 @@ ctest --test-dir build --output-on-failure
 ./build/recovery_tool \
   --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability" \
   --target-addresses ./targets.txt \
+  --recovered-wallets ./recovered_wallets.txt \
   --paths-btc "m/84'/0'/0'/0/{i}" \
   --paths-eth "m/44'/60'/0'/0/{i}" \
   --paths-sol "m/44'/501'/{i}'/0'" \
