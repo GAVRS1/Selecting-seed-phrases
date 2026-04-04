@@ -2,7 +2,9 @@
 #include "common.hpp"
 
 #include <array>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
@@ -42,6 +44,35 @@ std::string run_command(const std::string& command) {
     pclose(pipe);
     return output;
 }
+
+double parse_satoshis_response(const std::string& raw_response) {
+    std::string numeric;
+    numeric.reserve(raw_response.size());
+
+    for (const char ch : raw_response) {
+        const unsigned char uch = static_cast<unsigned char>(ch);
+        if (std::isdigit(uch) != 0 || ch == '.' || ch == ',' || ch == '+' || ch == '-') {
+            numeric.push_back(ch);
+        }
+    }
+
+    if (numeric.empty()) {
+        return 0.0;
+    }
+
+    for (char& ch : numeric) {
+        if (ch == ',') {
+            ch = '.';
+        }
+    }
+
+    char* end_ptr = nullptr;
+    const double parsed = std::strtod(numeric.c_str(), &end_ptr);
+    if (end_ptr == numeric.c_str()) {
+        return 0.0;
+    }
+    return parsed;
+}
 } // namespace
 
 std::string BitcoinModule::name() const { return "btc"; }
@@ -68,11 +99,7 @@ double BitcoinModule::fetch_balance_coin(const std::string& address) {
 #endif
     const std::string response = run_command(command);
 
-    if (response.empty()) {
-        return 0.0;
-    }
-
-    const double satoshis = std::stod(response);
+    const double satoshis = parse_satoshis_response(response);
     return satoshis / 100000000.0;
 }
 

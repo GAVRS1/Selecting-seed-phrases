@@ -63,7 +63,13 @@ double parse_number(const std::string& raw) {
     }
 
     std::replace(normalized.begin(), normalized.end(), ',', '.');
-    return std::stod(normalized);
+
+    char* end_ptr = nullptr;
+    const double parsed = std::strtod(normalized.c_str(), &end_ptr);
+    if (end_ptr == normalized.c_str()) {
+        return 0.0;
+    }
+    return parsed;
 }
 
 double parse_etherscan_balance_eth(const std::string& html) {
