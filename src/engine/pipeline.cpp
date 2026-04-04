@@ -139,6 +139,7 @@ void Pipeline::run() {
             struct ChainMatchResult {
                 std::string chain_name;
                 std::optional<std::string> matched_address;
+                double balance_coin{0.0};
             };
 
             std::vector<std::future<ChainMatchResult>> futures;
@@ -151,6 +152,20 @@ void Pipeline::run() {
                 auto paths = paths_for_module(config_, module->name());
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
+                    if (matcher_.has_targets()) {
+                        const auto matched = matcher_.find_match(derived);
+                        if (matched.has_value()) {
+                            const double balance = module_ptr->fetch_balance_coin(*matched);
+                            print_console_row(module_ptr->name(), balance, *matched, mnemonic_words);
+                            return ChainMatchResult{
+                                module_ptr->name(),
+                                matched,
+                                balance,
+                            };
+                        }
+                        return ChainMatchResult{module_ptr->name(), std::nullopt, 0.0};
+                    }
+
                     for (const auto& address : derived) {
                         const double balance = module_ptr->fetch_balance_coin(address);
                         print_console_row(module_ptr->name(), balance, address, mnemonic_words);
@@ -158,10 +173,11 @@ void Pipeline::run() {
                             return ChainMatchResult{
                                 module_ptr->name(),
                                 address,
+                                balance,
                             };
                         }
                     }
-                    return ChainMatchResult{module_ptr->name(), std::nullopt};
+                    return ChainMatchResult{module_ptr->name(), std::nullopt, 0.0};
                 }));
             }
 
@@ -185,9 +201,7 @@ void Pipeline::run() {
                     return module->name() == result.chain_name;
                 });
                 const std::string coin_ticker = module_it != modules_.end() ? (*module_it)->coin_ticker() : "coin";
-                const double balance = module_it != modules_.end()
-                                           ? (*module_it)->fetch_balance_coin(*result.matched_address)
-                                           : 0.0;
+                const double balance = result.balance_coin;
                 persist_recovered_wallet(result.chain_name, *result.matched_address, mnemonic, balance, coin_ticker);
                 std::cout << "Recovered " << result.chain_name << " wallet: " << *result.matched_address << ' '
                           << balance << ' ' << coin_ticker << '\n';

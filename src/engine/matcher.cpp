@@ -46,6 +46,10 @@ bool Matcher::contains(const std::vector<std::string>& addresses) const {
     return find_match(addresses).has_value();
 }
 
+bool Matcher::has_targets() const {
+    return !targets_.empty();
+}
+
 void Matcher::stop() {
     stop_.store(true);
 }

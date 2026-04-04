@@ -19,6 +19,7 @@ public:
 
     std::optional<std::string> find_match(const std::vector<std::string>& addresses) const;
     bool contains(const std::vector<std::string>& addresses) const;
+    bool has_targets() const;
     void stop();
     bool should_stop() const;
 
