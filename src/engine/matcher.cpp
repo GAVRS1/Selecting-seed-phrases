@@ -21,6 +21,18 @@ Matcher::Matcher(const std::string& target_addresses_file) {
 Matcher::Matcher(std::unordered_set<std::string> target_addresses)
     : targets_(std::move(target_addresses)) {}
 
+Matcher::Matcher(Matcher&& other) noexcept
+    : targets_(std::move(other.targets_)),
+      stop_(other.stop_.load()) {}
+
+Matcher& Matcher::operator=(Matcher&& other) noexcept {
+    if (this != &other) {
+        targets_ = std::move(other.targets_);
+        stop_.store(other.stop_.load());
+    }
+    return *this;
+}
+
 std::optional<std::string> Matcher::find_match(const std::vector<std::string>& addresses) const {
     for (const auto& addr : addresses) {
         if (targets_.contains(addr)) {
