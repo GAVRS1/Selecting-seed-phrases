@@ -5,10 +5,19 @@ REM Run from repository root.
 cd /d "%~dp0"
 
 set "CMAKE_EXTRA_ARGS="
-if defined VCPKG_ROOT (
+set "VCPKG_EFFECTIVE_ROOT="
+
+REM Prefer local ./vcpkg inside this repo if it exists.
+if exist "%cd%\vcpkg\scripts\buildsystems\vcpkg.cmake" (
+  set "VCPKG_EFFECTIVE_ROOT=%cd%\vcpkg"
+) else if defined VCPKG_ROOT (
   if exist "%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" (
-    set "CMAKE_EXTRA_ARGS=%CMAKE_EXTRA_ARGS% -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows"
+    set "VCPKG_EFFECTIVE_ROOT=%VCPKG_ROOT%"
   )
+)
+
+if defined VCPKG_EFFECTIVE_ROOT (
+  set "CMAKE_EXTRA_ARGS=%CMAKE_EXTRA_ARGS% -DCMAKE_TOOLCHAIN_FILE=%VCPKG_EFFECTIVE_ROOT%/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows"
 )
 
 if defined OPENSSL_ROOT_DIR (
@@ -23,8 +32,9 @@ if errorlevel 1 (
   echo.
   echo Option 1 ^(recommended^):
   echo   1^) Install vcpkg and package: openssl:x64-windows
-  echo   2^) setx VCPKG_ROOT C:\path\to\vcpkg
-  echo   3^) Re-open terminal and run this script again
+  echo   2^) put vcpkg near this repo in .\vcpkg OR run: setx VCPKG_ROOT C:\path\to\vcpkg
+  echo   3^) Install package: %%VCPKG_ROOT%%\vcpkg install openssl:x64-windows
+  echo   4^) Re-open terminal and run this script again
   echo.
   echo Option 2:
   echo   setx OPENSSL_ROOT_DIR C:\path\to\openssl
