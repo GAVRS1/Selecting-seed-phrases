@@ -41,9 +41,9 @@ private:
     void mark_chain_recovered(const std::string& chain_name);
     void print_console_header();
     void print_console_row(const std::string& chain_name,
-                           const std::string& coin_ticker,
+                           double balance_coin,
                            const std::string& address,
-                           const core::SecureBuffer& seed);
+                           const std::string& mnemonic_words);
     void persist_recovered_wallet(const std::string& chain_name,
                                   const std::string& address,
                                   const core::Mnemonic& mnemonic,
