@@ -40,10 +40,3 @@ ctest --test-dir build --output-on-failure
   --max-candidates 100000 \
   --threads 8
 ```
-
-## Next steps for production readiness
-
-- Replace placeholder checksum logic with full BIP-39 checksum validation.
-- Add PBKDF2-HMAC-SHA512 seed generation.
-- Integrate chain-grade cryptography (e.g., OpenSSL/libsodium/libsecp256k1).
-- Add SIGINT handling and deterministic secure wipe pathways.
