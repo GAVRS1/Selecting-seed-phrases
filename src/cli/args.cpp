@@ -1,0 +1,61 @@
+#include "cli/args.hpp"
+
+#include <sstream>
+#include <stdexcept>
+#include <string>
+
+namespace cli {
+
+namespace {
+std::vector<std::string> split_csv(const std::string& csv) {
+    std::vector<std::string> out;
+    std::stringstream ss(csv);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        if (!token.empty()) {
+            out.push_back(token);
+        }
+    }
+    return out;
+}
+} // namespace
+
+core::AppConfig parse_args(int argc, char** argv) {
+    core::AppConfig cfg;
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--template" && i + 1 < argc) {
+            cfg.template_words = split_csv(argv[++i]);
+        } else if (arg == "--chains" && i + 1 < argc) {
+            cfg.chains = split_csv(argv[++i]);
+        } else if (arg == "--paths-btc" && i + 1 < argc) {
+            cfg.paths_btc = split_csv(argv[++i]);
+        } else if (arg == "--paths-eth" && i + 1 < argc) {
+            cfg.paths_eth = split_csv(argv[++i]);
+        } else if (arg == "--paths-sol" && i + 1 < argc) {
+            cfg.paths_sol = split_csv(argv[++i]);
+        } else if (arg == "--target-addresses" && i + 1 < argc) {
+            cfg.target_addresses_path = argv[++i];
+        } else if (arg == "--wordlist" && i + 1 < argc) {
+            cfg.wordlist_path = argv[++i];
+        } else if (arg == "--scan-limit" && i + 1 < argc) {
+            cfg.scan_limit = static_cast<std::uint32_t>(std::stoul(argv[++i]));
+        } else if (arg == "--max-candidates" && i + 1 < argc) {
+            cfg.max_candidates = std::stoull(argv[++i]);
+        } else if (arg == "--threads" && i + 1 < argc) {
+            cfg.threads = static_cast<std::uint32_t>(std::stoul(argv[++i]));
+        }
+    }
+
+    if (cfg.template_words.empty()) {
+        throw std::invalid_argument("--template is required");
+    }
+    if (cfg.target_addresses_path.empty()) {
+        throw std::invalid_argument("--target-addresses is required");
+    }
+
+    return cfg;
+}
+
+} // namespace cli
