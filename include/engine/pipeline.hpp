@@ -37,7 +37,9 @@ private:
     void mark_chain_recovered(const std::string& chain_name);
     void persist_recovered_wallet(const std::string& chain_name,
                                   const std::string& address,
-                                  const core::Mnemonic& mnemonic) const;
+                                  const core::Mnemonic& mnemonic,
+                                  double balance_coin,
+                                  const std::string& coin_ticker) const;
 };
 
 } // namespace engine
