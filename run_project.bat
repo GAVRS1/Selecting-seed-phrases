@@ -4,20 +4,14 @@ setlocal
 REM Run from repository root.
 cd /d "%~dp0"
 
-set "BUILD_DIR=build"
-set "CONFIG=Release"
-
-if "%CMAKE_GENERATOR%"=="" (
-  echo [1/3] Configuring CMake (default generator)...
-  cmake -S . -B "%BUILD_DIR%"
-) else (
-  echo [1/3] Configuring CMake (generator: %CMAKE_GENERATOR%)...
-  cmake -S . -B "%BUILD_DIR%" -G "%CMAKE_GENERATOR%"
+if not exist build (
+  echo [1/3] Configuring CMake...
+  cmake -S . -B build
+  if errorlevel 1 goto :error
 )
-if errorlevel 1 goto :configure_error
 
 echo [2/3] Building project...
-cmake --build "%BUILD_DIR%" --config "%CONFIG%"
+cmake --build build --config Release
 if errorlevel 1 goto :error
 
 echo [3/3] Running recovery_tool...
@@ -27,13 +21,7 @@ if not exist recovered_wallets.txt (
 
 set "TEMPLATE=abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability"
 
-if exist "%BUILD_DIR%\%CONFIG%\recovery_tool.exe" (
-  set "EXE=%BUILD_DIR%\%CONFIG%\recovery_tool.exe"
-) else (
-  set "EXE=%BUILD_DIR%\recovery_tool.exe"
-)
-
-"%EXE%" ^
+build\recovery_tool.exe ^
   --template "%TEMPLATE%" ^
   --recovered-wallets "recovered_wallets.txt" ^
   --bip39-passphrase "" ^
@@ -48,18 +36,6 @@ if errorlevel 1 goto :error
 echo.
 echo Done.
 goto :end
-
-:configure_error
-echo.
-echo CMake configure failed. Most common reason: no C++ compiler toolchain installed.
-echo.
-echo Fix:
-echo   1) Install Visual Studio Build Tools with workload "Desktop development with C++".
-echo   2) Run this .bat from "x64 Native Tools Command Prompt for VS".
-echo   3) Or set generator manually, for example:
-echo      set CMAKE_GENERATOR=MinGW Makefiles
-
-goto :error
 
 :error
 echo.

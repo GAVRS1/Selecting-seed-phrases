@@ -54,14 +54,11 @@ ctest --test-dir build --output-on-failure
 
 ## Быстрый запуск в Windows (.bat)
 
-1. Установите **CMake** и **Visual Studio Build Tools** с workload **Desktop development with C++**.
-2. Откройте **x64 Native Tools Command Prompt for VS** (или обычный `cmd`, если toolchain уже доступен).
-3. Перейдите в корень репозитория и запустите `run_project.bat`.
-4. При необходимости отредактируйте переменную `TEMPLATE` внутри `run_project.bat` под вашу seed-фразу (через запятую, `*` для неизвестных слов).
+1. Установите **CMake** и **компилятор C++** (например, Visual Studio Build Tools с MSVC).
+2. В корне репозитория запустите `run_project.bat` двойным кликом.
+3. При необходимости отредактируйте переменную `TEMPLATE` внутри `run_project.bat` под вашу seed-фразу (через запятую, `*` для неизвестных слов).
 
 Скрипт автоматически:
-- настраивает CMake в `build/`,
+- настраивает CMake в `build/` (если папки ещё нет),
 - собирает проект,
-- запускает `recovery_tool.exe` (поддерживает пути `build\Release\...` и `build\...`).
-
-Если CMake не находит компилятор, скрипт выведет подсказки по установке toolchain.
+- запускает `build\recovery_tool.exe` с базовыми параметрами.
