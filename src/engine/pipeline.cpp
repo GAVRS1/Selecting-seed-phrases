@@ -3,22 +3,47 @@
 #include "core/secure_buffer.hpp"
 #include "core/thread_pool.hpp"
 
+#include <openssl/evp.h>
+
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace engine {
 
 namespace {
-core::SecureBuffer mnemonic_to_seed(const core::Mnemonic& mnemonic) {
+core::SecureBuffer mnemonic_to_seed(const core::Mnemonic& mnemonic, const std::string& passphrase) {
     std::ostringstream joined;
-    for (const auto& word : mnemonic) {
-        joined << word << ' ';
+    for (std::size_t i = 0; i < mnemonic.size(); ++i) {
+        joined << mnemonic[i];
+        if (i + 1 < mnemonic.size()) {
+            joined << ' ';
+        }
     }
-    const auto str = joined.str();
-    std::vector<std::uint8_t> bytes(str.begin(), str.end());
-    return core::SecureBuffer(std::move(bytes));
+
+    const std::string phrase = joined.str();
+    const std::string salt = "mnemonic" + passphrase;
+
+    std::vector<std::uint8_t> seed(64, 0);
+    const int ok = PKCS5_PBKDF2_HMAC(
+        phrase.c_str(),
+        static_cast<int>(phrase.size()),
+        reinterpret_cast<const unsigned char*>(salt.data()),
+        static_cast<int>(salt.size()),
+        2048,
+        EVP_sha512(),
+        static_cast<int>(seed.size()),
+        seed.data());
+
+    if (ok != 1) {
+        throw std::runtime_error("Failed to derive BIP-39 seed");
+    }
+
+    return core::SecureBuffer(std::move(seed));
 }
 
 std::vector<std::string> paths_for_module(const core::AppConfig& cfg, const std::string& name) {
@@ -85,7 +110,7 @@ void Pipeline::run() {
                 return true;
             }
 
-            auto seed = mnemonic_to_seed(mnemonic);
+            auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
                 std::string chain_name;
                 std::optional<std::string> matched_address;
