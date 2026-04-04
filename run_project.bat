@@ -66,20 +66,13 @@ if not exist "%RECOVERY_EXE%" (
   goto :error
 )
 
-"%RECOVERY_EXE%" ^
-  --template "%TEMPLATE%" ^
-  --recovered-wallets "recovered_wallets.txt" ^
-  --bip39-passphrase "" ^
-  --paths-btc "m/84'/0'/0'/0/{i}" ^
-  --paths-eth "m/44'/60'/0'/0/{i}" ^
-  --paths-sol "m/44'/501'/{i}'/0'" ^
-  --scan-limit 20 ^
-  --max-candidates 100000 ^
-  --threads 8
-if errorlevel 1 goto :error
+echo Opening separate consoles for BTC / ETH / SOL...
+start "BTC recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "btc" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-btc "m/84'/0'/0'/0/{i}" --scan-limit 20 --max-candidates 100000 --threads 8"
+start "ETH recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "eth" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-eth "m/44'/60'/0'/0/{i}" --scan-limit 20 --max-candidates 100000 --threads 8"
+start "SOL recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "sol" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-sol "m/44'/501'/{i}'/0'" --scan-limit 20 --max-candidates 100000 --threads 8"
 
 echo.
-echo Done.
+echo Consoles started.
 goto :end
 
 :error
