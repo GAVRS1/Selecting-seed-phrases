@@ -8,7 +8,6 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
-#include <iomanip>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -66,19 +65,17 @@ std::string mnemonic_to_string(const core::Mnemonic& mnemonic) {
     return joined.str();
 }
 
-std::string seed_preview(const core::SecureBuffer& seed) {
-    constexpr std::size_t preview_bytes = 8;
+std::string seed_to_hex(const core::SecureBuffer& seed) {
     constexpr char hex_digits[] = "0123456789abcdef";
-    const std::size_t count = std::min(preview_bytes, seed.size());
+    const std::size_t count = seed.size();
 
     std::string out;
-    out.reserve(count * 2 + 3);
+    out.reserve(count * 2);
     for (std::size_t i = 0; i < count; ++i) {
         const std::uint8_t value = seed.bytes()[i];
         out.push_back(hex_digits[(value >> 4) & 0xF]);
         out.push_back(hex_digits[value & 0xF]);
     }
-    out += "...";
     return out;
 }
 } // namespace
@@ -118,7 +115,7 @@ void Pipeline::print_console_row(const std::string& chain_name,
                                  const std::string& address,
                                  const core::SecureBuffer& seed) {
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << chain_name << " | " << coin_ticker << " | " << address << " | " << seed_preview(seed) << '\n';
+    std::cout << chain_name << " | " << coin_ticker << " | " << address << " | " << seed_to_hex(seed) << '\n';
 }
 
 void Pipeline::persist_recovered_wallet(const std::string& chain_name,
