@@ -8,9 +8,20 @@
 #include "engine/matcher.hpp"
 #include "engine/pipeline.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <iostream>
+#include <string>
 #include <unordered_set>
+
+namespace {
+bool chain_enabled(const core::AppConfig& cfg, const std::string& chain_name) {
+    if (cfg.chains.empty()) {
+        return true;
+    }
+    return std::find(cfg.chains.begin(), cfg.chains.end(), chain_name) != cfg.chains.end();
+}
+} // namespace
 
 int main(int argc, char** argv) {
     try {
@@ -25,9 +36,15 @@ int main(int argc, char** argv) {
                                       : engine::Matcher(cfg.target_addresses_path);
         engine::Pipeline pipeline(cfg, validator, generator, matcher);
 
-        pipeline.register_chain(std::make_unique<chains::BitcoinModule>());
-        pipeline.register_chain(std::make_unique<chains::EthereumModule>());
-        pipeline.register_chain(std::make_unique<chains::SolanaModule>());
+        if (chain_enabled(cfg, "btc")) {
+            pipeline.register_chain(std::make_unique<chains::BitcoinModule>());
+        }
+        if (chain_enabled(cfg, "eth")) {
+            pipeline.register_chain(std::make_unique<chains::EthereumModule>());
+        }
+        if (chain_enabled(cfg, "sol")) {
+            pipeline.register_chain(std::make_unique<chains::SolanaModule>());
+        }
 
         pipeline.run();
         return 0;
