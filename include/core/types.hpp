@@ -20,6 +20,7 @@ struct AppConfig {
     std::vector<std::string> paths_eth;
     std::vector<std::string> paths_sol;
     std::string target_addresses_path;
+    std::string recovered_wallets_path{"recovered_wallets.txt"};
     uint32_t scan_limit{20};
     uint64_t max_candidates{100000};
     uint32_t threads{4};
