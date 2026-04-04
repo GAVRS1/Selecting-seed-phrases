@@ -147,6 +147,7 @@ void Pipeline::run() {
                 return true;
             }
 
+            const std::string mnemonic_words = mnemonic_to_string(mnemonic);
             auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
                 std::string chain_name;
@@ -161,7 +162,7 @@ void Pipeline::run() {
                     continue;
                 }
                 auto paths = paths_for_module(config_, module->name());
-                futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed]() mutable {
+                futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     for (const auto& address : derived) {
                         const double balance = module_ptr->fetch_balance_coin(address);
