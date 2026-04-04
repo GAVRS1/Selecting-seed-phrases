@@ -3,6 +3,7 @@
 #include "bip39/mnemonic_generator.hpp"
 #include "bip39/mnemonic_validator.hpp"
 #include "chains/i_chain_module.hpp"
+#include "core/secure_buffer.hpp"
 #include "core/types.hpp"
 #include "engine/matcher.hpp"
 
@@ -40,9 +41,9 @@ private:
     void mark_chain_recovered(const std::string& chain_name);
     void print_console_header();
     void print_console_row(const std::string& chain_name,
-                           double balance_coin,
+                           const std::string& coin_ticker,
                            const std::string& address,
-                           const std::string& mnemonic_words);
+                           const core::SecureBuffer& seed);
     void persist_recovered_wallet(const std::string& chain_name,
                                   const std::string& address,
                                   const core::Mnemonic& mnemonic,

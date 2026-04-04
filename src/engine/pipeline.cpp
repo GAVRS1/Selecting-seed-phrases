@@ -65,6 +65,19 @@ std::string mnemonic_to_string(const core::Mnemonic& mnemonic) {
     return joined.str();
 }
 
+std::string seed_to_hex(const core::SecureBuffer& seed) {
+    constexpr char hex_digits[] = "0123456789abcdef";
+    const std::size_t count = seed.size();
+
+    std::string out;
+    out.reserve(count * 2);
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::uint8_t value = seed.bytes()[i];
+        out.push_back(hex_digits[(value >> 4) & 0xF]);
+        out.push_back(hex_digits[value & 0xF]);
+    }
+    return out;
+}
 } // namespace
 
 Pipeline::Pipeline(const core::AppConfig& config,
@@ -94,15 +107,15 @@ void Pipeline::print_console_header() {
     }
 
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << "CHAIN | BALANCE | ADDRESS | SEED\n";
+    std::cout << "CHAIN | COIN | ADDRESS | SEED\n";
 }
 
 void Pipeline::print_console_row(const std::string& chain_name,
-                                 double balance_coin,
+                                 const std::string& coin_ticker,
                                  const std::string& address,
-                                 const std::string& mnemonic_words) {
+                                 const core::SecureBuffer& seed) {
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << chain_name << " | " << balance_coin << " | " << address << " | " << mnemonic_words << '\n';
+    std::cout << chain_name << " | " << coin_ticker << " | " << address << " | " << seed_to_hex(seed) << '\n';
 }
 
 void Pipeline::persist_recovered_wallet(const std::string& chain_name,
@@ -153,7 +166,7 @@ void Pipeline::run() {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     for (const auto& address : derived) {
                         const double balance = module_ptr->fetch_balance_coin(address);
-                        print_console_row(module_ptr->name(), balance, address, mnemonic_words);
+                        print_console_row(module_ptr->name(), module_ptr->coin_ticker(), address, seed_copy);
                         if (balance > 0.0) {
                             return ChainMatchResult{
                                 module_ptr->name(),
