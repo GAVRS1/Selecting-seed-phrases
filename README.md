@@ -38,6 +38,7 @@ ctest --test-dir build --output-on-failure
   --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability" \
   --target-addresses ./targets.txt \
   --recovered-wallets ./recovered_wallets.txt \
+  --bip39-passphrase "" \
   --paths-btc "m/84'/0'/0'/0/{i}" \
   --paths-eth "m/44'/60'/0'/0/{i}" \
   --paths-sol "m/44'/501'/{i}'/0'" \

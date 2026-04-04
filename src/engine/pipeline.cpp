@@ -16,7 +16,7 @@
 namespace engine {
 
 namespace {
-core::SecureBuffer mnemonic_to_seed(const core::Mnemonic& mnemonic) {
+core::SecureBuffer mnemonic_to_seed(const core::Mnemonic& mnemonic, const std::string& passphrase) {
     std::ostringstream joined;
     for (std::size_t i = 0; i < mnemonic.size(); ++i) {
         joined << mnemonic[i];
@@ -110,7 +110,7 @@ void Pipeline::run() {
                 return true;
             }
 
-            auto seed = mnemonic_to_seed(mnemonic);
+            auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
                 std::string chain_name;
                 std::optional<std::string> matched_address;
