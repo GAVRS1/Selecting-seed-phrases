@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -87,7 +88,9 @@ void Pipeline::mark_chain_recovered(const std::string& chain_name) {
 
 void Pipeline::persist_recovered_wallet(const std::string& chain_name,
                                         const std::string& address,
-                                        const core::Mnemonic& mnemonic) const {
+                                        const core::Mnemonic& mnemonic,
+                                        double balance_coin,
+                                        const std::string& coin_ticker) const {
     std::ofstream out(config_.recovered_wallets_path, std::ios::app);
     if (!out) {
         throw std::runtime_error("Failed to open recovered wallets file: " + config_.recovered_wallets_path);
@@ -95,6 +98,7 @@ void Pipeline::persist_recovered_wallet(const std::string& chain_name,
 
     out << "chain: " << chain_name << '\n';
     out << "address: " << address << '\n';
+    out << "balance_coin: " << balance_coin << ' ' << coin_ticker << '\n';
     out << "mnemonic: " << mnemonic_to_string(mnemonic) << "\n\n";
 }
 
@@ -126,10 +130,17 @@ void Pipeline::run() {
                 auto paths = paths_for_module(config_, module->name());
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
-                    return ChainMatchResult{
-                        module_ptr->name(),
-                        matcher_.find_match(derived),
-                    };
+                    for (const auto& address : derived) {
+                        const double balance = module_ptr->fetch_balance_coin(address);
+                        std::cout << module_ptr->name() << ' ' << address << ' ' << balance << " coin\n";
+                        if (balance > 0.0) {
+                            return ChainMatchResult{
+                                module_ptr->name(),
+                                address,
+                            };
+                        }
+                    }
+                    return ChainMatchResult{module_ptr->name(), std::nullopt};
                 }));
             }
 
@@ -149,8 +160,16 @@ void Pipeline::run() {
                 }
 
                 mark_chain_recovered(result.chain_name);
-                persist_recovered_wallet(result.chain_name, *result.matched_address, mnemonic);
-                std::cout << "Recovered " << result.chain_name << " wallet: " << *result.matched_address << '\n';
+                const auto module_it = std::find_if(modules_.begin(), modules_.end(), [&](const auto& module) {
+                    return module->name() == result.chain_name;
+                });
+                const std::string coin_ticker = module_it != modules_.end() ? (*module_it)->coin_ticker() : "coin";
+                const double balance = module_it != modules_.end()
+                                           ? (*module_it)->fetch_balance_coin(*result.matched_address)
+                                           : 0.0;
+                persist_recovered_wallet(result.chain_name, *result.matched_address, mnemonic, balance, coin_ticker);
+                std::cout << "Recovered " << result.chain_name << " wallet: " << *result.matched_address << ' '
+                          << balance << ' ' << coin_ticker << '\n';
             }
 
             return false;

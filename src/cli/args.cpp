@@ -55,10 +55,6 @@ core::AppConfig parse_args(int argc, char** argv) {
     if (cfg.template_words.empty()) {
         throw std::invalid_argument("--template is required");
     }
-    if (cfg.target_addresses_path.empty()) {
-        throw std::invalid_argument("--target-addresses is required");
-    }
-
     return cfg;
 }
 

@@ -10,6 +10,7 @@
 
 #include <exception>
 #include <iostream>
+#include <unordered_set>
 
 int main(int argc, char** argv) {
     try {
@@ -19,7 +20,9 @@ int main(int argc, char** argv) {
         bip39::MnemonicValidator validator(wl);
         bip39::MnemonicGenerator generator(wl, cfg.allow_words);
 
-        engine::Matcher matcher(cfg.target_addresses_path);
+        engine::Matcher matcher = cfg.target_addresses_path.empty()
+                                      ? engine::Matcher(std::unordered_set<std::string>{})
+                                      : engine::Matcher(cfg.target_addresses_path);
         engine::Pipeline pipeline(cfg, validator, generator, matcher);
 
         pipeline.register_chain(std::make_unique<chains::BitcoinModule>());
