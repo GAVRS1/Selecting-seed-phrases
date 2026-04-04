@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(wallet_recovery LANGUAGES CXX)
 
+find_package(OpenSSL REQUIRED)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -12,12 +14,14 @@ add_library(recovery_core
     src/chains/bitcoin_module.cpp
     src/chains/ethereum_module.cpp
     src/chains/solana_module.cpp
+    src/chains/common.cpp
     src/engine/matcher.cpp
     src/engine/pipeline.cpp
     src/cli/args.cpp
 )
 
 target_include_directories(recovery_core PUBLIC include)
+target_link_libraries(recovery_core PUBLIC OpenSSL::Crypto)
 
 add_executable(recovery_tool src/main.cpp)
 target_link_libraries(recovery_tool PRIVATE recovery_core)
