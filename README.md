@@ -33,6 +33,49 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+
+
+### Windows: OpenSSL dependency
+
+This project links against `OpenSSL::Crypto`, so OpenSSL development files must be available at configure time.
+
+Recommended (vcpkg):
+
+```powershell
+# one-time
+git clone https://github.com/microsoft/vcpkg $env:USERPROFILE\vcpkg
+& $env:USERPROFILE\vcpkg\bootstrap-vcpkg.bat
+setx VCPKG_ROOT "$env:USERPROFILE\vcpkg"
+& $env:USERPROFILE\vcpkg\vcpkg install openssl:x64-windows
+
+# open a NEW terminal after setx, then configure this project
+cmake -S . -B build `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+cmake --build build --config Release
+```
+
+Quick troubleshooting (PowerShell):
+
+```powershell
+# verify env var
+$env:VCPKG_ROOT
+
+# verify package installed
+& $env:VCPKG_ROOT\vcpkg list | Select-String openssl
+
+# if build/ cache is stale, reset configure cache
+Remove-Item -Recurse -Force build
+```
+
+Alternative (manual OpenSSL install):
+
+```powershell
+cmake -S . -B build -DOPENSSL_ROOT_DIR="C:/OpenSSL-Win64"
+```
+
+If you use a multi-config generator (Visual Studio), remember to build with `--config Release` or `--config Debug`.
+
 ## Run (example)
 
 ```bash

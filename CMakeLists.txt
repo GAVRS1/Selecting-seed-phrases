@@ -1,7 +1,32 @@
 cmake_minimum_required(VERSION 3.16)
 project(wallet_recovery LANGUAGES CXX)
 
-find_package(OpenSSL REQUIRED)
+# Windows quality-of-life: if user installed dependencies with vcpkg and set
+# VCPKG_ROOT in environment, help CMake locate OpenSSL even without explicitly
+# passing CMAKE_TOOLCHAIN_FILE.
+if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{VCPKG_ROOT})
+        list(APPEND CMAKE_PREFIX_PATH
+            "$ENV{VCPKG_ROOT}/installed/x64-windows"
+            "$ENV{VCPKG_ROOT}/installed/x64-windows-static"
+        )
+    endif()
+endif()
+
+find_package(OpenSSL QUIET)
+if(NOT OpenSSL_FOUND)
+    message(FATAL_ERROR
+        "OpenSSL was not found. On Windows, run these steps then re-configure:
+"
+        "  1) setx VCPKG_ROOT C:/path/to/vcpkg
+"
+        "  2) %VCPKG_ROOT%/vcpkg install openssl:x64-windows
+"
+        "  3) cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+"
+        "Alternative: cmake -S . -B build -DOPENSSL_ROOT_DIR=C:/path/to/openssl"
+    )
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
