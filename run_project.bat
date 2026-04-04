@@ -4,10 +4,32 @@ setlocal
 REM Run from repository root.
 cd /d "%~dp0"
 
-if not exist build (
-  echo [1/3] Configuring CMake...
-  cmake -S . -B build
-  if errorlevel 1 goto :error
+set "CMAKE_EXTRA_ARGS="
+if defined VCPKG_ROOT (
+  if exist "%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" (
+    set "CMAKE_EXTRA_ARGS=%CMAKE_EXTRA_ARGS% -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows"
+  )
+)
+
+if defined OPENSSL_ROOT_DIR (
+  set "CMAKE_EXTRA_ARGS=%CMAKE_EXTRA_ARGS% -DOPENSSL_ROOT_DIR=%OPENSSL_ROOT_DIR%"
+)
+
+echo [1/3] Configuring CMake...
+cmake -S . -B build %CMAKE_EXTRA_ARGS%
+if errorlevel 1 (
+  echo.
+  echo OpenSSL not found.
+  echo.
+  echo Option 1 ^(recommended^):
+  echo   1^) Install vcpkg and package: openssl:x64-windows
+  echo   2^) setx VCPKG_ROOT C:\path\to\vcpkg
+  echo   3^) Re-open terminal and run this script again
+  echo.
+  echo Option 2:
+  echo   setx OPENSSL_ROOT_DIR C:\path\to\openssl
+  echo   Re-open terminal and run this script again
+  goto :error
 )
 
 echo [2/3] Building project...
