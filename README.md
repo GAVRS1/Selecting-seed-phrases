@@ -51,3 +51,14 @@ ctest --test-dir build --output-on-failure
 > Notes:
 > - `--target-addresses` is now optional.
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
+
+## Быстрый запуск в Windows (.bat)
+
+1. Установите **CMake** и **компилятор C++** (например, Visual Studio Build Tools с MSVC).
+2. В корне репозитория запустите `run_project.bat` двойным кликом.
+3. При необходимости отредактируйте переменную `TEMPLATE` внутри `run_project.bat` под вашу seed-фразу (через запятую, `*` для неизвестных слов).
+
+Скрипт автоматически:
+- настраивает CMake в `build/` (если папки ещё нет),
+- собирает проект,
+- запускает `build\recovery_tool.exe` с базовыми параметрами.
