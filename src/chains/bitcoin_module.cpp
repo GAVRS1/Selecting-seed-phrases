@@ -56,7 +56,16 @@ std::vector<std::string> BitcoinModule::derive_addresses(
 
 double BitcoinModule::fetch_balance_coin(const std::string& address) {
     const std::string url = "https://blockchain.info/q/addressbalance/" + address;
+#ifdef _WIN32
+    std::string ps_url = url;
+    for (std::size_t pos = 0; (pos = ps_url.find('\'', pos)) != std::string::npos; pos += 2) {
+        ps_url.replace(pos, 1, "''");
+    }
+    const std::string command =
+        "powershell -NoProfile -Command \"(Invoke-WebRequest -UseBasicParsing '" + ps_url + "').Content\"";
+#else
     const std::string command = "curl -fsSL --max-time 10 '" + shell_escape_single_quote(url) + "'";
+#endif
     const std::string response = run_command(command);
 
     if (response.empty()) {
