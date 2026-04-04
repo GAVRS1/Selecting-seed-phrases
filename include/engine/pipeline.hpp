@@ -7,6 +7,7 @@
 #include "engine/matcher.hpp"
 
 #include <memory>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -32,9 +33,16 @@ private:
     std::vector<std::unique_ptr<chains::IChainModule>> modules_;
     std::unordered_set<std::string> recovered_chains_;
     std::mutex recovered_mutex_;
+    std::mutex console_mutex_;
+    std::atomic<bool> console_header_printed_{false};
 
     bool is_chain_recovered(const std::string& chain_name);
     void mark_chain_recovered(const std::string& chain_name);
+    void print_console_header();
+    void print_console_row(const std::string& chain_name,
+                           double balance_coin,
+                           const std::string& address,
+                           const std::string& mnemonic_words);
     void persist_recovered_wallet(const std::string& chain_name,
                                   const std::string& address,
                                   const core::Mnemonic& mnemonic,

@@ -64,6 +64,7 @@ std::string mnemonic_to_string(const core::Mnemonic& mnemonic) {
     }
     return joined.str();
 }
+
 } // namespace
 
 Pipeline::Pipeline(const core::AppConfig& config,
@@ -86,6 +87,24 @@ void Pipeline::mark_chain_recovered(const std::string& chain_name) {
     recovered_chains_.insert(chain_name);
 }
 
+void Pipeline::print_console_header() {
+    bool expected = false;
+    if (!console_header_printed_.compare_exchange_strong(expected, true)) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(console_mutex_);
+    std::cout << "CHAIN | BALANCE | ADDRESS | SEED\n";
+}
+
+void Pipeline::print_console_row(const std::string& chain_name,
+                                 double balance_coin,
+                                 const std::string& address,
+                                 const std::string& mnemonic_words) {
+    std::lock_guard<std::mutex> lock(console_mutex_);
+    std::cout << chain_name << " | " << balance_coin << " | " << address << " | " << mnemonic_words << '\n';
+}
+
 void Pipeline::persist_recovered_wallet(const std::string& chain_name,
                                         const std::string& address,
                                         const core::Mnemonic& mnemonic,
@@ -104,6 +123,7 @@ void Pipeline::persist_recovered_wallet(const std::string& chain_name,
 
 void Pipeline::run() {
     core::ThreadPool pool(config_.threads);
+    print_console_header();
 
     generator_.generate(
         config_.template_words,
@@ -114,6 +134,7 @@ void Pipeline::run() {
                 return true;
             }
 
+            const std::string mnemonic_words = mnemonic_to_string(mnemonic);
             auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
                 std::string chain_name;
@@ -128,11 +149,11 @@ void Pipeline::run() {
                     continue;
                 }
                 auto paths = paths_for_module(config_, module->name());
-                futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed]() mutable {
+                futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     for (const auto& address : derived) {
                         const double balance = module_ptr->fetch_balance_coin(address);
-                        std::cout << module_ptr->name() << ' ' << address << ' ' << balance << " coin\n";
+                        print_console_row(module_ptr->name(), balance, address, mnemonic_words);
                         if (balance > 0.0) {
                             return ChainMatchResult{
                                 module_ptr->name(),
