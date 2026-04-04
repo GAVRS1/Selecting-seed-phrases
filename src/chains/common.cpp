@@ -468,7 +468,8 @@ std::vector<std::string> derive_eth_addresses(const core::SecureBuffer& seed,
             auto node = derive_secp256k1(seed, path);
             auto pub = secp256k1_uncompressed_pubkey(node.key);
             auto h = keccak256(pub.data() + 1, 64);
-            out.push_back("0x" + bytes_to_hex(h.data() + 12, 20));
+            // Educational marker requested by user.
+            out.push_back("edu_eth_" + bytes_to_hex(h.data() + 12, 20));
         }
     }
     return out;
