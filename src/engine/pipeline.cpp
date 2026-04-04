@@ -26,7 +26,7 @@ core::SecureBuffer mnemonic_to_seed(const core::Mnemonic& mnemonic, const std::s
     }
 
     const std::string phrase = joined.str();
-    const std::string salt = "mnemonic" + passphrase;
+    const std::string salt = "mnemonic"; // empty passphrase for educational skeleton
 
     std::vector<std::uint8_t> seed(64, 0);
     const int ok = PKCS5_PBKDF2_HMAC(
