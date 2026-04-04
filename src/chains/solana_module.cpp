@@ -7,6 +7,11 @@
 #include <stdexcept>
 #include <string>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 namespace chains {
 
 namespace {
@@ -53,9 +58,20 @@ std::vector<std::string> SolanaModule::derive_addresses(
 double SolanaModule::fetch_balance_coin(const std::string& address) {
     const std::string payload =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getBalance\",\"params\":[\"" + address + "\"]}";
+#ifdef _WIN32
+    std::string ps_payload = payload;
+    for (std::size_t pos = 0; (pos = ps_payload.find('\'', pos)) != std::string::npos; pos += 2) {
+        ps_payload.replace(pos, 1, "''");
+    }
+    const std::string command =
+        "powershell -NoProfile -Command \"$b='" + ps_payload +
+        "'; (Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'https://api.mainnet-beta.solana.com' "
+        "-ContentType 'application/json' -Body $b).Content\"";
+#else
     const std::string command =
         "curl -fsSL --max-time 10 -H 'Content-Type: application/json' -d '" +
         shell_escape_single_quote(payload) + "' 'https://api.mainnet-beta.solana.com'";
+#endif
     const std::string response = run_command(command);
 
     std::smatch m;

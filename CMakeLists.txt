@@ -5,11 +5,22 @@ project(wallet_recovery LANGUAGES CXX)
 # VCPKG_ROOT in environment, help CMake locate OpenSSL even without explicitly
 # passing CMAKE_TOOLCHAIN_FILE.
 if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/vcpkg/installed/x64-windows")
+        list(APPEND CMAKE_PREFIX_PATH
+            "${CMAKE_SOURCE_DIR}/vcpkg/installed/x64-windows"
+            "${CMAKE_SOURCE_DIR}/vcpkg/installed/x64-windows-static"
+        )
+    endif()
+
     if(DEFINED ENV{VCPKG_ROOT})
         list(APPEND CMAKE_PREFIX_PATH
             "$ENV{VCPKG_ROOT}/installed/x64-windows"
             "$ENV{VCPKG_ROOT}/installed/x64-windows-static"
         )
+    endif()
+
+    if(DEFINED ENV{OPENSSL_ROOT_DIR})
+        list(APPEND CMAKE_PREFIX_PATH "$ENV{OPENSSL_ROOT_DIR}")
     endif()
 endif()
 
