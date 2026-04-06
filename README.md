@@ -102,7 +102,6 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
 > - You can run only manual balance checks without seed generation by using `--manual-wallets`.
 > - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
-> - At the end of run the tool prints a summary (`Done. Valid candidates: ...`); if it is `0`, your template/filters produced no valid candidates.
 
 ## Manual wallet check mode
 
