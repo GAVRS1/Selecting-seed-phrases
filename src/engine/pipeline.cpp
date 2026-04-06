@@ -78,6 +78,25 @@ std::string trim_copy(const std::string& value) {
     return std::string(begin, end);
 }
 
+std::string format_balance(double value) {
+    std::ostringstream oss;
+    oss.setf(std::ios::fixed);
+    oss.precision(8);
+    oss << value;
+    std::string formatted = oss.str();
+    auto dot_pos = formatted.find('.');
+    if (dot_pos == std::string::npos) {
+        return formatted + ".0";
+    }
+    while (!formatted.empty() && formatted.back() == '0') {
+        formatted.pop_back();
+    }
+    if (!formatted.empty() && formatted.back() == '.') {
+        formatted.push_back('0');
+    }
+    return formatted;
+}
+
 } // namespace
 
 Pipeline::Pipeline(const core::AppConfig& config,
@@ -115,7 +134,8 @@ void Pipeline::print_console_row(const std::string& chain_name,
                                  const std::string& address,
                                  const std::string& mnemonic_words) {
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << chain_name << " || " << balance_coin << " || " << address << " || " << mnemonic_words << '\n';
+    std::cout << chain_name << " || " << format_balance(balance_coin) << " || " << address << " || " << mnemonic_words
+              << '\n';
 }
 
 void Pipeline::persist_recovered_wallet(const std::string& chain_name,
