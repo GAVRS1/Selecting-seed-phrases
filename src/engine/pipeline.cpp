@@ -116,7 +116,7 @@ void Pipeline::print_console_header() {
     }
 
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << "WALLET || BALANCE || ADRESS || SEED (12 WORDS)\n";
+    std::cout << "WALLET || BALANCE || ADDRESS || SEED (12 WORDS)\n";
 }
 
 void Pipeline::print_console_row(const std::string& chain_name,
@@ -344,7 +344,7 @@ void Pipeline::run() {
     core::ThreadPool pool(config_.threads);
     print_console_header();
 
-    generator_.generate(
+    std::size_t produced_candidates = generator_.generate(
         config_.template_words,
         validator_,
         config_.max_candidates,
@@ -369,6 +369,11 @@ void Pipeline::run() {
                     continue;
                 }
                 auto paths = paths_for_module(config_, module->name());
+                if (paths.empty()) {
+                    std::lock_guard<std::mutex> lock(console_mutex_);
+                    std::cout << "warn || 0 || - || no derivation paths configured for chain: " << module->name() << '\n';
+                    continue;
+                }
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     if (matcher_.has_targets()) {
@@ -437,6 +442,11 @@ void Pipeline::run() {
 
             return false;
         });
+
+    if (produced_candidates == 0) {
+        std::lock_guard<std::mutex> lock(console_mutex_);
+        std::cout << "info || 0 || - || no valid mnemonic candidates for the given template\n";
+    }
 }
 
 } // namespace engine
