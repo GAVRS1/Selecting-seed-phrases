@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -69,7 +70,7 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
         "-ContentType 'application/json' -Body $b).Content\"";
 #else
     const std::string command =
-        "curl -fsSL --max-time 10 -H 'Content-Type: application/json' -d '" +
+        "curl -fsSL --max-time 10 -H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
         shell_escape_single_quote(payload) + "' 'https://api.mainnet-beta.solana.com'";
 #endif
     const std::string response = run_command(command);
@@ -78,9 +79,7 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
     if (!std::regex_search(response, m, std::regex(R"("value"\s*:\s*([0-9]+))"))) {
         return 0.0;
     }
-
-    const long double lamports = std::stold(m[1].str());
-    return static_cast<double>(lamports / 1000000000.0L);
+    return std::strtod(m[1].str().c_str(), nullptr);
 }
 
 } // namespace chains
