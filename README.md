@@ -134,3 +134,5 @@ Lines starting with `#` are ignored.
 - настраивает CMake в `build/` (если папки ещё нет),
 - собирает проект,
 - запускает `build\recovery_tool.exe` с базовыми параметрами.
+
+Для ручной проверки адресов из файла используйте `run_manual_test.bat`.
