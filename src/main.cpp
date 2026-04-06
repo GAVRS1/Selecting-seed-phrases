@@ -34,16 +34,11 @@ int main(int argc, char** argv) {
         bip39::MnemonicValidator validator(wl);
         std::optional<std::uint64_t> shuffle_seed;
         if (cfg.shuffle_words) {
-            if (cfg.shuffle_seed.has_value()) {
+            if (cfg.shuffle_seed != 0) {
                 shuffle_seed = cfg.shuffle_seed;
             } else {
-                const auto now_ns = static_cast<std::uint64_t>(
-                    std::chrono::high_resolution_clock::now().time_since_epoch().count());
-                const std::uint64_t rd_hi = static_cast<std::uint64_t>(std::random_device{}()) << 32U;
-                const std::uint64_t rd_lo = static_cast<std::uint64_t>(std::random_device{}());
-                shuffle_seed = now_ns ^ rd_hi ^ rd_lo;
+                shuffle_seed = static_cast<std::uint64_t>(std::random_device{}());
             }
-            std::cout << "Shuffle seed: " << *shuffle_seed << '\n';
         }
         bip39::MnemonicGenerator generator(wl, cfg.allow_words, shuffle_seed);
 
