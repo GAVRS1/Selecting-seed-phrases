@@ -84,6 +84,7 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
   --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability" \
   --recovered-wallets ./recovered_wallets.txt \
   --bip39-passphrase "" \
+  --shuffle-words \
   --paths-btc "m/84'/0'/0'/0/{i}" \
   --paths-eth "m/44'/60'/0'/0/{i}" \
   --paths-sol "m/44'/501'/{i}'/0'" \
@@ -95,6 +96,8 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > Notes:
 > - `--target-addresses` is now optional.
 > - `--max-candidates 0` means no limit (default behavior).
+> - `--shuffle-words` randomizes wildcard substitution order to avoid always starting from the same alphabetic prefix.
+> - `--shuffle-seed <number>` enables shuffle with a fixed seed for reproducible runs.
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
 > - You can run only manual balance checks without seed generation by using `--manual-wallets`.
 
