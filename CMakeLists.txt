@@ -75,3 +75,7 @@ add_test(NAME test_pipeline COMMAND test_pipeline)
 add_executable(test_derivation tests/test_derivation.cpp)
 target_link_libraries(test_derivation PRIVATE recovery_core)
 add_test(NAME test_derivation COMMAND test_derivation)
+
+add_executable(test_cli_args tests/test_cli_args.cpp)
+target_link_libraries(test_cli_args PRIVATE recovery_core)
+add_test(NAME test_cli_args COMMAND test_cli_args)
