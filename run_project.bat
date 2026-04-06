@@ -28,7 +28,10 @@ echo [1/3] Configuring CMake...
 cmake -S . -B build %CMAKE_EXTRA_ARGS%
 if errorlevel 1 (
   echo.
-  echo OpenSSL not found.
+  echo CMake configure failed.
+  echo Check messages above. Common reasons:
+  echo   - missing OpenSSL dependency
+  echo   - broken/missing source files in the repository
   echo.
   echo Option 1 ^(recommended^):
   echo   1^) Install vcpkg and package: openssl:x64-windows
