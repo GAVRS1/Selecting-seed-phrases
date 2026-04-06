@@ -183,7 +183,9 @@ bool MnemonicValidator::is_checksum_valid(const core::Mnemonic& mnemonic) const 
 
 bool MnemonicValidator::validate(const core::Mnemonic& mnemonic) const {
     if (!wordlist_.has_full_bip39_english_size()) {
-        return is_valid_length(mnemonic);
+        // In narrowed-wordlist mode we still require every word to exist in the
+        // loaded dictionary. Only checksum validation is skipped.
+        return is_valid_length(mnemonic) && all_words_known(mnemonic);
     }
     return is_valid_length(mnemonic) && all_words_known(mnemonic) && is_checksum_valid(mnemonic);
 }
