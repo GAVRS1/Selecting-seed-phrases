@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <exception>
 #include <iostream>
+#include <optional>
+#include <random>
 #include <string>
 #include <unordered_set>
 
@@ -29,7 +31,15 @@ int main(int argc, char** argv) {
 
         bip39::Wordlist wl(cfg.wordlist_path);
         bip39::MnemonicValidator validator(wl);
-        bip39::MnemonicGenerator generator(wl, cfg.allow_words);
+        std::optional<std::uint64_t> shuffle_seed;
+        if (cfg.shuffle_words) {
+            if (cfg.shuffle_seed != 0) {
+                shuffle_seed = cfg.shuffle_seed;
+            } else {
+                shuffle_seed = static_cast<std::uint64_t>(std::random_device{}());
+            }
+        }
+        bip39::MnemonicGenerator generator(wl, cfg.allow_words, shuffle_seed);
 
         engine::Matcher matcher = cfg.target_addresses_path.empty()
                                       ? engine::Matcher(std::unordered_set<std::string>{})
