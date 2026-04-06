@@ -20,7 +20,6 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - `engine::Pipeline` and `engine::Matcher` for async candidate processing and address matching.
 - Per-chain deduplication: once a chain wallet is recovered, that chain is skipped for all next candidates.
 - Scanner-based balance checks for derived BTC/ETH/SOL addresses.
-- Optional producer/consumer mode: generation writes `chain || address || mnemonic` into queue files, and a separate balance-checker process consumes them asynchronously.
 - Manual wallet balance-check mode from a TXT file (`--manual-wallets`) for parser/scanner verification.
 - Console output in `coin` units (not USD), e.g. `0 coin`, `0.15 coin`.
 - Automatic persistence of recovered wallets (`chain`, `address`, `balance_coin`, `mnemonic`) to a TXT file.
@@ -101,46 +100,6 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - `--shuffle-seed <number>` enables shuffle with a fixed seed for reproducible runs.
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
 > - You can run only manual balance checks without seed generation by using `--manual-wallets`.
-> - For high throughput, use `--wallet-queue-dir` in generators and run a dedicated `--balance-checker` process separately.
-
-## Async queue mode (for 2-4 parallel consoles)
-
-This mode decouples **mnemonic/address generation** from slow network balance requests.
-
-### 1) Start producer consoles (example: 3 consoles)
-
-Each producer derives addresses and appends lines to queue files:
-
-```bash
-./build/recovery_tool \
-  --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability" \
-  --wallet-queue-dir ./wallet_queue \
-  --threads 8 \
-  --scan-limit 20
-```
-
-Queue line format:
-
-```text
-chain || address || seed phrase
-```
-
-### 2) Start checker console
-
-Checker process atomically grabs `*.queue` files, checks balances, discards zero-balance lines, and writes non-zero wallets to `--recovered-wallets`.
-
-```bash
-./build/recovery_tool \
-  --balance-checker \
-  --wallet-queue-dir ./wallet_queue \
-  --recovered-wallets ./recovered_wallets.txt \
-  --chains "btc,eth,sol"
-```
-
-Implementation details:
-- no in-memory accumulation of all addresses (stream processing file-by-file),
-- no conflicts between producer/checker (checker renames queue file to `.processing` before reading),
-- safe parallel producers (append-only writes per process file).
 
 ## Manual wallet check mode
 

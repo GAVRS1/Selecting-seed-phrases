@@ -7,14 +7,12 @@
 #include "core/types.hpp"
 #include "engine/matcher.hpp"
 
-#include <filesystem>
 #include <memory>
 #include <atomic>
 #include <optional>
 #include <mutex>
 #include <string>
 #include <unordered_set>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -40,8 +38,6 @@ private:
     std::mutex recovered_mutex_;
     std::mutex console_mutex_;
     std::atomic<bool> console_header_printed_{false};
-    std::mutex queue_file_mutex_;
-    std::filesystem::path queue_file_path_;
 
     bool is_chain_recovered(const std::string& chain_name);
     void mark_chain_recovered(const std::string& chain_name);
@@ -51,22 +47,12 @@ private:
                            const std::string& address,
                            const std::string& mnemonic_words);
     void run_manual_wallet_checks();
-    void run_balance_checker();
     std::optional<std::pair<std::string, std::string>> parse_manual_wallet_line(const std::string& line) const;
     void persist_recovered_wallet(const std::string& chain_name,
                                   const std::string& address,
                                   const core::Mnemonic& mnemonic,
                                   double balance_coin,
                                   const std::string& coin_ticker) const;
-    void persist_recovered_wallet_from_phrase(const std::string& chain_name,
-                                              const std::string& address,
-                                              const std::string& mnemonic_phrase,
-                                              double balance_coin,
-                                              const std::string& coin_ticker) const;
-    void enqueue_wallet_candidate(const std::string& chain_name,
-                                  const std::string& address,
-                                  const std::string& mnemonic_words);
-    std::optional<std::tuple<std::string, std::string, std::string>> parse_wallet_queue_line(const std::string& line) const;
 };
 
 } // namespace engine
