@@ -287,15 +287,16 @@ void Pipeline::run() {
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     if (matcher_.has_targets()) {
-                        const auto matched = matcher_.find_match(derived);
-                        if (matched.has_value()) {
-                            const double balance = module_ptr->fetch_balance_coin(*matched);
-                            print_console_row(module_ptr->name(), balance, *matched, mnemonic_words);
-                            return ChainMatchResult{
-                                module_ptr->name(),
-                                matched,
-                                balance,
-                            };
+                        for (const auto& address : derived) {
+                            const double balance = module_ptr->fetch_balance_coin(address);
+                            print_console_row(module_ptr->name(), balance, address, mnemonic_words);
+                            if (matcher_.contains_address(address)) {
+                                return ChainMatchResult{
+                                    module_ptr->name(),
+                                    address,
+                                    balance,
+                                };
+                            }
                         }
                         return ChainMatchResult{module_ptr->name(), std::nullopt, 0.0};
                     }
