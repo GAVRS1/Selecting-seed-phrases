@@ -55,11 +55,14 @@ int main() {
     bip39::MnemonicValidator subset_validator(subset_wordlist);
 
     const core::Mnemonic subset_candidate(12, "abandon");
+    const core::Mnemonic subset_unknown_word(12, "zoo");
     assert(!subset_wordlist.has_full_bip39_english_size());
     assert(subset_validator.is_valid_length(subset_candidate));
     assert(subset_validator.all_words_known(subset_candidate));
     assert(subset_validator.is_checksum_valid(subset_candidate));
     assert(subset_validator.validate(subset_candidate));
+    assert(!subset_validator.all_words_known(subset_unknown_word));
+    assert(!subset_validator.validate(subset_unknown_word));
 
     std::cout << "test_bip39 passed\n";
     return 0;
