@@ -9,6 +9,7 @@
 #include "engine/pipeline.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <iostream>
 #include <optional>
