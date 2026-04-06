@@ -50,6 +50,8 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.shuffle_words = true;
         } else if (arg == "--wordlist" && i + 1 < argc) {
             cfg.wordlist_path = argv[++i];
+        } else if (arg == "--allow-words" && i + 1 < argc) {
+            cfg.allow_words = split_csv(argv[++i]);
         } else if (arg == "--scan-limit" && i + 1 < argc) {
             cfg.scan_limit = static_cast<std::uint32_t>(std::stoul(argv[++i]));
         } else if (arg == "--max-candidates" && i + 1 < argc) {

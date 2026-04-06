@@ -13,6 +13,7 @@ public:
     bool contains(const std::string& word) const;
     int index_of(const std::string& word) const;
     const std::vector<std::string>& words() const;
+    bool has_full_bip39_english_size() const;
 
 private:
     std::vector<std::string> words_;
