@@ -39,6 +39,8 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.target_addresses_path = argv[++i];
         } else if (arg == "--recovered-wallets" && i + 1 < argc) {
             cfg.recovered_wallets_path = argv[++i];
+        } else if (arg == "--manual-wallets" && i + 1 < argc) {
+            cfg.manual_wallets_path = argv[++i];
         } else if (arg == "--bip39-passphrase" && i + 1 < argc) {
             cfg.bip39_passphrase = argv[++i];
         } else if (arg == "--wordlist" && i + 1 < argc) {
@@ -52,8 +54,8 @@ core::AppConfig parse_args(int argc, char** argv) {
         }
     }
 
-    if (cfg.template_words.empty()) {
-        throw std::invalid_argument("--template is required");
+    if (cfg.template_words.empty() && cfg.manual_wallets_path.empty()) {
+        throw std::invalid_argument("either --template or --manual-wallets is required");
     }
     return cfg;
 }

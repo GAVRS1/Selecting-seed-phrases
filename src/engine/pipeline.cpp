@@ -8,10 +8,13 @@
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace engine {
@@ -63,6 +66,15 @@ std::string mnemonic_to_string(const core::Mnemonic& mnemonic) {
         }
     }
     return joined.str();
+}
+
+std::string trim_copy(const std::string& value) {
+    const auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char c) { return std::isspace(c) != 0; });
+    const auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) { return std::isspace(c) != 0; }).base();
+    if (begin >= end) {
+        return "";
+    }
+    return std::string(begin, end);
 }
 
 } // namespace
@@ -121,7 +133,74 @@ void Pipeline::persist_recovered_wallet(const std::string& chain_name,
     out << "mnemonic: " << mnemonic_to_string(mnemonic) << "\n\n";
 }
 
+std::optional<std::pair<std::string, std::string>> Pipeline::parse_manual_wallet_line(const std::string& line) const {
+    const std::string clean = trim_copy(line);
+    if (clean.empty() || clean[0] == '#') {
+        return std::nullopt;
+    }
+
+    static const std::array<char, 3> delimiters{',', ';', ' '};
+    for (char delimiter : delimiters) {
+        const auto pos = clean.find(delimiter);
+        if (pos == std::string::npos) {
+            continue;
+        }
+        const std::string chain_name = trim_copy(clean.substr(0, pos));
+        const std::string address = trim_copy(clean.substr(pos + 1));
+        if (chain_name.empty() || address.empty()) {
+            return std::nullopt;
+        }
+        return std::make_pair(chain_name, address);
+    }
+
+    return std::nullopt;
+}
+
+void Pipeline::run_manual_wallet_checks() {
+    std::ifstream in(config_.manual_wallets_path);
+    if (!in) {
+        throw std::runtime_error("Failed to open manual wallets file: " + config_.manual_wallets_path);
+    }
+
+    print_console_header();
+
+    std::unordered_map<std::string, chains::IChainModule*> modules_by_name;
+    for (const auto& module : modules_) {
+        modules_by_name[module->name()] = module.get();
+    }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        const auto parsed = parse_manual_wallet_line(line);
+        if (!parsed.has_value()) {
+            continue;
+        }
+
+        const auto& [chain_name, address] = *parsed;
+        const auto module_it = modules_by_name.find(chain_name);
+        if (module_it == modules_by_name.end()) {
+            std::lock_guard<std::mutex> lock(console_mutex_);
+            std::cout << "skip || 0 || " << address << " || unknown chain: " << chain_name << '\n';
+            continue;
+        }
+
+        const double balance = module_it->second->fetch_balance_coin(address);
+        print_console_row(chain_name, balance, address, "[manual input]");
+        if (balance <= 0.0) {
+            continue;
+        }
+
+        core::Mnemonic manual_marker{"[manual", "input]"};
+        persist_recovered_wallet(chain_name, address, manual_marker, balance, module_it->second->coin_ticker());
+    }
+}
+
 void Pipeline::run() {
+    if (!config_.manual_wallets_path.empty()) {
+        run_manual_wallet_checks();
+        return;
+    }
+
     core::ThreadPool pool(config_.threads);
     print_console_header();
 

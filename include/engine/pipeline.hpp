@@ -9,9 +9,11 @@
 
 #include <memory>
 #include <atomic>
+#include <optional>
 #include <mutex>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace engine {
@@ -44,6 +46,8 @@ private:
                            double balance_coin,
                            const std::string& address,
                            const std::string& mnemonic_words);
+    void run_manual_wallet_checks();
+    std::optional<std::pair<std::string, std::string>> parse_manual_wallet_line(const std::string& line) const;
     void persist_recovered_wallet(const std::string& chain_name,
                                   const std::string& address,
                                   const core::Mnemonic& mnemonic,
