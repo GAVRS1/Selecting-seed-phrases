@@ -6,20 +6,37 @@
 #include "engine/matcher.hpp"
 #include "engine/pipeline.hpp"
 
-#include <fstream>
+#include <filesystem>
 #include <iostream>
 
-int main() {
-    std::ofstream wl("/tmp/test_wordlist_pipeline.txt");
-    wl << "alpha\n" << "beta\n" << "gamma\n";
-    wl.close();
+namespace {
 
-    bip39::Wordlist wordlist("/tmp/test_wordlist_pipeline.txt");
+std::string resolve_wordlist_path() {
+    const std::filesystem::path direct{"data/bip39_english.txt"};
+    if (std::filesystem::exists(direct)) {
+        return direct.string();
+    }
+
+    const std::filesystem::path parent{"../data/bip39_english.txt"};
+    if (std::filesystem::exists(parent)) {
+        return parent.string();
+    }
+
+    throw std::runtime_error("Unable to locate data/bip39_english.txt");
+}
+
+} // namespace
+
+int main() {
+    bip39::Wordlist wordlist(resolve_wordlist_path());
     bip39::MnemonicValidator validator(wordlist);
-    bip39::MnemonicGenerator generator(wordlist, {"alpha", "beta"});
+    bip39::MnemonicGenerator generator(wordlist, {"abandon", "about"});
 
     core::AppConfig cfg;
-    cfg.template_words = core::Mnemonic(12, "alpha");
+    cfg.template_words = {
+        "abandon", "abandon", "abandon", "abandon", "abandon", "abandon",
+        "abandon", "abandon", "abandon", "abandon", "abandon", "about",
+    };
     cfg.paths_btc = {"m/84'/0'/0'/0/{i}"};
     cfg.scan_limit = 1;
     cfg.max_candidates = 0;

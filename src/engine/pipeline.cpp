@@ -9,6 +9,7 @@
 #include <iostream>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <optional>
 #include <sstream>
@@ -203,8 +204,10 @@ void Pipeline::run() {
 
     core::ThreadPool pool(config_.threads);
     print_console_header();
+    std::atomic<std::uint64_t> processed_candidates{0};
+    std::atomic<std::uint64_t> recovered_wallets{0};
 
-    generator_.generate(
+    const std::size_t valid_candidates = generator_.generate(
         config_.template_words,
         validator_,
         config_.max_candidates,
@@ -212,6 +215,7 @@ void Pipeline::run() {
             if (matcher_.should_stop()) {
                 return true;
             }
+            ++processed_candidates;
 
             const std::string mnemonic_words = mnemonic_to_string(mnemonic);
             auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
@@ -282,12 +286,24 @@ void Pipeline::run() {
                 const std::string coin_ticker = module_it != modules_.end() ? (*module_it)->coin_ticker() : "coin";
                 const double balance = result.balance_coin;
                 persist_recovered_wallet(result.chain_name, *result.matched_address, mnemonic, balance, coin_ticker);
+                ++recovered_wallets;
                 std::cout << "Recovered " << result.chain_name << " wallet: " << *result.matched_address << ' '
                           << balance << ' ' << coin_ticker << '\n';
             }
 
             return false;
         });
+
+    {
+        std::lock_guard<std::mutex> lock(console_mutex_);
+        std::cout << "Done. Valid candidates: " << valid_candidates
+                  << ", processed: " << processed_candidates.load()
+                  << ", recovered wallets: " << recovered_wallets.load() << ".\n";
+        if (valid_candidates == 0) {
+            std::cout << "Hint: search finished immediately because there were no valid candidates for the current "
+                         "template/wordlist settings.\n";
+        }
+    }
 }
 
 } // namespace engine

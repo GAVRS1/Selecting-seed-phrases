@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 namespace {
@@ -45,6 +46,28 @@ int main() {
     assert(validator.all_words_known(invalid_checksum));
     assert(!validator.is_checksum_valid(invalid_checksum));
     assert(!validator.validate(invalid_checksum));
+
+    std::ofstream custom_wl("/tmp/test_wordlist_subset.txt");
+    custom_wl << "abandon\nabout\nability\n";
+    custom_wl.close();
+
+    bip39::Wordlist subset_wordlist("/tmp/test_wordlist_subset.txt");
+    bip39::MnemonicValidator subset_validator(subset_wordlist);
+
+    const core::Mnemonic subset_candidate(12, "abandon");
+    assert(!subset_wordlist.has_full_bip39_english_size());
+    assert(subset_validator.is_valid_length(subset_candidate));
+    assert(subset_validator.all_words_known(subset_candidate));
+    assert(subset_validator.is_checksum_valid(subset_candidate));
+    assert(subset_validator.validate(subset_candidate));
+
+    const core::Mnemonic subset_with_unknown_fixed{
+        "zebra", "zebra", "zebra", "zebra", "zebra", "zebra",
+        "zebra", "zebra", "zebra", "zebra", "zebra", "zebra",
+    };
+    assert(subset_validator.is_valid_length(subset_with_unknown_fixed));
+    assert(!subset_validator.all_words_known(subset_with_unknown_fixed));
+    assert(subset_validator.validate(subset_with_unknown_fixed));
 
     std::cout << "test_bip39 passed\n";
     return 0;

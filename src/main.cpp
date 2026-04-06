@@ -31,6 +31,12 @@ int main(int argc, char** argv) {
         auto cfg = cli::parse_args(argc, argv);
 
         bip39::Wordlist wl(cfg.wordlist_path);
+        if (!wl.has_full_bip39_english_size()) {
+            std::cerr
+                << "Warning: loaded " << wl.words().size()
+                << " words instead of 2048; strict BIP39 validation (dictionary + checksum) is disabled. "
+                << "The file is treated as wildcard candidate pool.\n";
+        }
         bip39::MnemonicValidator validator(wl);
         std::optional<std::uint64_t> shuffle_seed;
         if (cfg.shuffle_words) {
