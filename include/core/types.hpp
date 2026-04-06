@@ -21,6 +21,7 @@ struct AppConfig {
     std::vector<std::string> paths_sol;
     std::string target_addresses_path;
     std::string recovered_wallets_path{"recovered_wallets.txt"};
+    std::string manual_wallets_path;
     std::string bip39_passphrase;
     uint32_t scan_limit{20};
     // 0 means "no artificial cap" (iterate until the generator exhausts variants
