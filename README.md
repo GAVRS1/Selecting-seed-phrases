@@ -119,15 +119,10 @@ Lines starting with `#` are ignored.
 
 ```bash
 ./build/recovery_tool \
-  --manual-wallets ./data/manual_wallets.txt \
+  --manual-wallets ./manual_wallets.txt \
   --recovered-wallets ./recovered_wallets.txt \
   --chains "btc,eth,sol"
 ```
-
-### Windows quick run for manual mode
-
-- Use `run_manual_test.bat`.
-- The script expects wallets in `data\manual_wallets.txt` and auto-creates this file with examples if it does not exist.
 
 ## Быстрый запуск в Windows (.bat)
 
