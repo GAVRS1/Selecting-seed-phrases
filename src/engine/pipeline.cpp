@@ -10,10 +10,13 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
+#include <filesystem>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -83,7 +86,14 @@ Pipeline::Pipeline(const core::AppConfig& config,
                    const bip39::MnemonicValidator& validator,
                    const bip39::MnemonicGenerator& generator,
                    Matcher& matcher)
-    : config_(config), validator_(validator), generator_(generator), matcher_(matcher) {}
+    : config_(config), validator_(validator), generator_(generator), matcher_(matcher) {
+    if (!config_.wallet_queue_dir.empty()) {
+        const auto queue_dir = std::filesystem::path(config_.wallet_queue_dir);
+        std::filesystem::create_directories(queue_dir);
+        const auto id = std::hash<std::thread::id>{}(std::this_thread::get_id());
+        queue_file_path_ = queue_dir / ("producer-" + std::to_string(id) + ".queue");
+    }
+}
 
 void Pipeline::register_chain(std::unique_ptr<chains::IChainModule> module) {
     modules_.push_back(std::move(module));
@@ -131,6 +141,63 @@ void Pipeline::persist_recovered_wallet(const std::string& chain_name,
     out << "address: " << address << '\n';
     out << "balance_coin: " << balance_coin << ' ' << coin_ticker << '\n';
     out << "mnemonic: " << mnemonic_to_string(mnemonic) << "\n\n";
+}
+
+void Pipeline::persist_recovered_wallet_from_phrase(const std::string& chain_name,
+                                                    const std::string& address,
+                                                    const std::string& mnemonic_phrase,
+                                                    double balance_coin,
+                                                    const std::string& coin_ticker) const {
+    std::ofstream out(config_.recovered_wallets_path, std::ios::app);
+    if (!out) {
+        throw std::runtime_error("Failed to open recovered wallets file: " + config_.recovered_wallets_path);
+    }
+
+    out << "chain: " << chain_name << '\n';
+    out << "address: " << address << '\n';
+    out << "balance_coin: " << balance_coin << ' ' << coin_ticker << '\n';
+    out << "mnemonic: " << mnemonic_phrase << "\n\n";
+}
+
+void Pipeline::enqueue_wallet_candidate(const std::string& chain_name,
+                                        const std::string& address,
+                                        const std::string& mnemonic_words) {
+    if (queue_file_path_.empty()) {
+        throw std::runtime_error("Wallet queue path is not initialized");
+    }
+
+    std::lock_guard<std::mutex> lock(queue_file_mutex_);
+    std::ofstream out(queue_file_path_, std::ios::app);
+    if (!out) {
+        throw std::runtime_error("Failed to open wallet queue file: " + queue_file_path_.string());
+    }
+    out << chain_name << " || " << address << " || " << mnemonic_words << '\n';
+}
+
+std::optional<std::tuple<std::string, std::string, std::string>> Pipeline::parse_wallet_queue_line(const std::string& line) const {
+    const std::string clean = trim_copy(line);
+    if (clean.empty() || clean[0] == '#') {
+        return std::nullopt;
+    }
+
+    const std::string delimiter = "||";
+    const auto first = clean.find(delimiter);
+    if (first == std::string::npos) {
+        return std::nullopt;
+    }
+    const auto second = clean.find(delimiter, first + delimiter.size());
+    if (second == std::string::npos) {
+        return std::nullopt;
+    }
+
+    const std::string chain_name = trim_copy(clean.substr(0, first));
+    const std::string address = trim_copy(clean.substr(first + delimiter.size(), second - first - delimiter.size()));
+    const std::string mnemonic_phrase = trim_copy(clean.substr(second + delimiter.size()));
+    if (chain_name.empty() || address.empty() || mnemonic_phrase.empty()) {
+        return std::nullopt;
+    }
+
+    return std::make_tuple(chain_name, address, mnemonic_phrase);
 }
 
 std::optional<std::pair<std::string, std::string>> Pipeline::parse_manual_wallet_line(const std::string& line) const {
@@ -195,7 +262,80 @@ void Pipeline::run_manual_wallet_checks() {
     }
 }
 
+void Pipeline::run_balance_checker() {
+    print_console_header();
+
+    std::unordered_map<std::string, chains::IChainModule*> modules_by_name;
+    for (const auto& module : modules_) {
+        modules_by_name[module->name()] = module.get();
+    }
+
+    const auto queue_dir = std::filesystem::path(config_.wallet_queue_dir);
+    std::uint64_t processed_files = 0;
+
+    for (const auto& entry : std::filesystem::directory_iterator(queue_dir)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        if (entry.path().extension() != ".queue") {
+            continue;
+        }
+
+        const auto processing_path = entry.path().string() + ".processing";
+        std::error_code rename_ec;
+        std::filesystem::rename(entry.path(), processing_path, rename_ec);
+        if (rename_ec) {
+            continue;
+        }
+
+        std::ifstream in(processing_path);
+        if (!in) {
+            std::filesystem::remove(processing_path);
+            continue;
+        }
+
+        std::string line;
+        while (std::getline(in, line)) {
+            const auto parsed = parse_wallet_queue_line(line);
+            if (!parsed.has_value()) {
+                continue;
+            }
+
+            const auto& [chain_name, address, mnemonic_phrase] = *parsed;
+            const auto module_it = modules_by_name.find(chain_name);
+            if (module_it == modules_by_name.end()) {
+                continue;
+            }
+
+            const double balance = module_it->second->fetch_balance_coin(address);
+            print_console_row(chain_name, balance, address, mnemonic_phrase);
+            if (balance <= 0.0) {
+                continue;
+            }
+
+            persist_recovered_wallet_from_phrase(chain_name,
+                                                 address,
+                                                 mnemonic_phrase,
+                                                 balance,
+                                                 module_it->second->coin_ticker());
+        }
+
+        std::filesystem::remove(processing_path);
+        ++processed_files;
+    }
+
+    if (processed_files == 0) {
+        std::lock_guard<std::mutex> lock(console_mutex_);
+        std::cout << "info || 0 || - || queue is empty: " << queue_dir.string() << '\n';
+    }
+}
+
 void Pipeline::run() {
+    if (config_.balance_checker_mode) {
+        run_balance_checker();
+        return;
+    }
+
     if (!config_.manual_wallets_path.empty()) {
         run_manual_wallet_checks();
         return;
@@ -246,6 +386,12 @@ void Pipeline::run() {
                     }
 
                     for (const auto& address : derived) {
+                        if (!config_.wallet_queue_dir.empty()) {
+                            enqueue_wallet_candidate(module_ptr->name(), address, mnemonic_words);
+                            print_console_row(module_ptr->name(), 0.0, address, mnemonic_words);
+                            continue;
+                        }
+
                         const double balance = module_ptr->fetch_balance_coin(address);
                         print_console_row(module_ptr->name(), balance, address, mnemonic_words);
                         if (balance > 0.0) {
@@ -267,6 +413,9 @@ void Pipeline::run() {
 
             for (auto& future : futures) {
                 auto result = future.get();
+                if (!config_.wallet_queue_dir.empty()) {
+                    continue;
+                }
                 if (!result.matched_address.has_value()) {
                     continue;
                 }

@@ -31,6 +31,8 @@ struct AppConfig {
     // or pipeline stop condition triggers).
     uint64_t max_candidates{0};
     uint32_t threads{4};
+    std::string wallet_queue_dir;
+    bool balance_checker_mode{false};
 };
 
 } // namespace core
