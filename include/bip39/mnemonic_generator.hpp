@@ -5,6 +5,7 @@
 #include "core/types.hpp"
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,7 +13,9 @@ namespace bip39 {
 
 class MnemonicGenerator {
 public:
-    MnemonicGenerator(const Wordlist& wordlist, std::vector<std::string> allow_words);
+    MnemonicGenerator(const Wordlist& wordlist,
+                      std::vector<std::string> allow_words,
+                      std::optional<std::uint64_t> shuffle_seed = std::nullopt);
 
     std::size_t generate(
         const core::Mnemonic& pattern,
