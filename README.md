@@ -101,8 +101,7 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - `--allow-words "abandon,ability,about"` limits wildcard substitutions without editing the original BIP-39 wordlist.
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
 > - You can run only manual balance checks without seed generation by using `--manual-wallets`.
-> - If the wordlist contains fewer than 2048 words, the file is treated as a wildcard candidate pool; strict BIP-39 checks (dictionary + checksum) are disabled (a warning is printed at startup).
-> - At the end of run the tool prints a summary (`Done. Valid candidates: ...`); if it is `0`, your template/filters produced no valid candidates.
+> - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
 
 ## Manual wallet check mode
 

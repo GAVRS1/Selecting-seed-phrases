@@ -34,8 +34,8 @@ int main(int argc, char** argv) {
         if (!wl.has_full_bip39_english_size()) {
             std::cerr
                 << "Warning: loaded " << wl.words().size()
-                << " words instead of 2048; strict BIP39 validation (dictionary + checksum) is disabled. "
-                << "The file is treated as wildcard candidate pool.\n";
+                << " words instead of 2048; checksum validation is disabled. "
+                << "Use this mode only to narrow candidate words.\n";
         }
         bip39::MnemonicValidator validator(wl);
         std::optional<std::uint64_t> shuffle_seed;

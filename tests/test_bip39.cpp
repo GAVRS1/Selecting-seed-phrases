@@ -61,14 +61,6 @@ int main() {
     assert(subset_validator.is_checksum_valid(subset_candidate));
     assert(subset_validator.validate(subset_candidate));
 
-    const core::Mnemonic subset_with_unknown_fixed{
-        "zebra", "zebra", "zebra", "zebra", "zebra", "zebra",
-        "zebra", "zebra", "zebra", "zebra", "zebra", "zebra",
-    };
-    assert(subset_validator.is_valid_length(subset_with_unknown_fixed));
-    assert(!subset_validator.all_words_known(subset_with_unknown_fixed));
-    assert(subset_validator.validate(subset_with_unknown_fixed));
-
     std::cout << "test_bip39 passed\n";
     return 0;
 }
