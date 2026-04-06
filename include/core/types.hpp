@@ -22,6 +22,7 @@ struct AppConfig {
     std::vector<std::string> paths_sol;
     std::string target_addresses_path;
     std::string recovered_wallets_path{"recovered_wallets.txt"};
+    std::string seen_mnemonics_path{"seen_mnemonics.txt"};
     std::string manual_wallets_path;
     std::string bip39_passphrase;
     bool shuffle_words{false};

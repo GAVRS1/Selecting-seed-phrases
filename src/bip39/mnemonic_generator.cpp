@@ -58,6 +58,13 @@ std::size_t MnemonicGenerator::generate(
         }
 
         if (pos == current.size()) {
+            std::unordered_set<std::string> unique_words;
+            unique_words.reserve(current.size());
+            for (const auto& word : current) {
+                if (!unique_words.insert(word).second) {
+                    return false;
+                }
+            }
             if (validator.validate(current)) {
                 ++produced;
                 return on_valid_candidate(current);

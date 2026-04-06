@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
@@ -95,6 +96,30 @@ std::string format_balance(double value) {
         formatted.push_back('0');
     }
     return formatted;
+}
+
+std::unordered_set<std::string> load_seen_mnemonics(const std::string& path) {
+    std::unordered_set<std::string> seen;
+    std::ifstream in(path);
+    if (!in) {
+        return seen;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        const std::string clean = trim_copy(line);
+        if (!clean.empty()) {
+            seen.insert(clean);
+        }
+    }
+    return seen;
+}
+
+void append_seen_mnemonic(const std::string& path, const std::string& mnemonic_words) {
+    std::ofstream out(path, std::ios::app);
+    if (!out) {
+        throw std::runtime_error("Failed to open seen mnemonics file: " + path);
+    }
+    out << mnemonic_words << '\n';
 }
 
 } // namespace
@@ -226,6 +251,7 @@ void Pipeline::run() {
     print_console_header();
     std::atomic<std::uint64_t> processed_candidates{0};
     std::atomic<std::uint64_t> recovered_wallets{0};
+    auto seen_mnemonics = load_seen_mnemonics(config_.seen_mnemonics_path);
 
     const std::size_t valid_candidates = generator_.generate(
         config_.template_words,
@@ -238,6 +264,11 @@ void Pipeline::run() {
             ++processed_candidates;
 
             const std::string mnemonic_words = mnemonic_to_string(mnemonic);
+            if (seen_mnemonics.contains(mnemonic_words)) {
+                return false;
+            }
+            append_seen_mnemonic(config_.seen_mnemonics_path, mnemonic_words);
+            seen_mnemonics.insert(mnemonic_words);
             auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
                 std::string chain_name;
