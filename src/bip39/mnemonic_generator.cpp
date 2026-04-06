@@ -1,13 +1,21 @@
 #include "bip39/mnemonic_generator.hpp"
 
+#include <algorithm>
+#include <random>
 #include <stdexcept>
 
 namespace bip39 {
 
-MnemonicGenerator::MnemonicGenerator(const Wordlist& wordlist, std::vector<std::string> allow_words)
+MnemonicGenerator::MnemonicGenerator(const Wordlist& wordlist,
+                                     std::vector<std::string> allow_words,
+                                     std::optional<std::uint64_t> shuffle_seed)
     : wordlist_(wordlist), allow_words_(std::move(allow_words)) {
     if (allow_words_.empty()) {
         allow_words_ = wordlist_.words();
+    }
+    if (shuffle_seed.has_value()) {
+        std::mt19937_64 rng(*shuffle_seed);
+        std::shuffle(allow_words_.begin(), allow_words_.end(), rng);
     }
 }
 

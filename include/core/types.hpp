@@ -23,6 +23,8 @@ struct AppConfig {
     std::string recovered_wallets_path{"recovered_wallets.txt"};
     std::string manual_wallets_path;
     std::string bip39_passphrase;
+    bool shuffle_words{false};
+    uint64_t shuffle_seed{0};
     uint32_t scan_limit{20};
     // 0 means "no artificial cap" (iterate until the generator exhausts variants
     // or pipeline stop condition triggers).
