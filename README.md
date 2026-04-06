@@ -20,6 +20,7 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - `engine::Pipeline` and `engine::Matcher` for async candidate processing and address matching.
 - Per-chain deduplication: once a chain wallet is recovered, that chain is skipped for all next candidates.
 - Scanner-based balance checks for derived BTC/ETH/SOL addresses.
+- Manual wallet balance-check mode from a TXT file (`--manual-wallets`) for parser/scanner verification.
 - Console output in `coin` units (not USD), e.g. `0 coin`, `0.15 coin`.
 - Automatic persistence of recovered wallets (`chain`, `address`, `balance_coin`, `mnemonic`) to a TXT file.
 - Basic CLI parser and executable entrypoint.
@@ -95,6 +96,33 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - `--target-addresses` is now optional.
 > - `--max-candidates 0` means no limit (default behavior).
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
+> - You can run only manual balance checks without seed generation by using `--manual-wallets`.
+
+## Manual wallet check mode
+
+Use this mode when you want to verify parser/scanner behavior on known addresses from a text file.
+
+### Input format (`manual_wallets.txt`)
+
+One wallet per line:
+
+```text
+btc,1BoatSLRHtKNngkdXEeobR76b53LETtpyT
+eth,0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe
+sol,Vote111111111111111111111111111111111111111
+```
+
+Also supported separators: `;` or a single space.
+Lines starting with `#` are ignored.
+
+### Run example
+
+```bash
+./build/recovery_tool \
+  --manual-wallets ./manual_wallets.txt \
+  --recovered-wallets ./recovered_wallets.txt \
+  --chains "btc,eth,sol"
+```
 
 ## Быстрый запуск в Windows (.bat)
 
