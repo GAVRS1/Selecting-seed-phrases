@@ -25,7 +25,7 @@ std::size_t MnemonicGenerator::generate(
     core::Mnemonic current = pattern;
 
     std::function<bool(std::size_t)> dfs = [&](std::size_t pos) {
-        if (produced >= max_candidates) {
+        if (max_candidates > 0 && produced >= max_candidates) {
             return true;
         }
 

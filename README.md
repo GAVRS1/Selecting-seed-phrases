@@ -87,12 +87,13 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
   --paths-eth "m/44'/60'/0'/0/{i}" \
   --paths-sol "m/44'/501'/{i}'/0'" \
   --scan-limit 20 \
-  --max-candidates 100000 \
+  --max-candidates 0 \
   --threads 8
 ```
 
 > Notes:
 > - `--target-addresses` is now optional.
+> - `--max-candidates 0` means no limit (default behavior).
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
 
 ## Быстрый запуск в Windows (.bat)
