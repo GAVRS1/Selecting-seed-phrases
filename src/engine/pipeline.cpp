@@ -203,6 +203,8 @@ std::optional<std::pair<std::string, std::string>> Pipeline::parse_manual_wallet
 }
 
 void Pipeline::run_manual_wallet_checks() {
+    std::cout << std::unitbuf;
+
     std::ifstream in(config_.manual_wallets_path);
     if (!in) {
         throw std::runtime_error("Failed to open manual wallets file: " + config_.manual_wallets_path);
@@ -242,6 +244,8 @@ void Pipeline::run_manual_wallet_checks() {
 }
 
 void Pipeline::run() {
+    std::cout << std::unitbuf;
+
     if (!config_.manual_wallets_path.empty()) {
         run_manual_wallet_checks();
         return;
