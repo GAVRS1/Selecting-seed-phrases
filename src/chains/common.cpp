@@ -383,6 +383,28 @@ std::string bytes_to_hex(const std::uint8_t* data, std::size_t len) {
     return ss.str();
 }
 
+std::string eth_checksum_address(const std::array<std::uint8_t, 20>& address_bytes) {
+    const std::string lower_hex = bytes_to_hex(address_bytes.data(), address_bytes.size());
+    const auto hash = keccak256(reinterpret_cast<const std::uint8_t*>(lower_hex.data()), lower_hex.size());
+    const std::string hash_hex = bytes_to_hex(hash.data(), hash.size());
+
+    std::string checksummed;
+    checksummed.reserve(42);
+    checksummed += "0x";
+    for (std::size_t i = 0; i < lower_hex.size(); ++i) {
+        const char c = lower_hex[i];
+        if (c >= 'a' && c <= 'f') {
+            const int nibble = (hash_hex[i] >= '0' && hash_hex[i] <= '9')
+                                   ? (hash_hex[i] - '0')
+                                   : (10 + (hash_hex[i] - 'a'));
+            checksummed.push_back(nibble >= 8 ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c);
+        } else {
+            checksummed.push_back(c);
+        }
+    }
+    return checksummed;
+}
+
 Ed25519Node master_ed25519_from_seed(const core::SecureBuffer& seed) {
     static const std::string key = "ed25519 seed";
     auto i = hmac_sha512(reinterpret_cast<const std::uint8_t*>(key.data()),
@@ -468,7 +490,9 @@ std::vector<std::string> derive_eth_addresses(const core::SecureBuffer& seed,
             auto node = derive_secp256k1(seed, path);
             auto pub = secp256k1_uncompressed_pubkey(node.key);
             auto h = keccak256(pub.data() + 1, 64);
-            out.push_back("0x" + bytes_to_hex(h.data() + 12, 20));
+            std::array<std::uint8_t, 20> address_bytes{};
+            std::copy_n(h.begin() + 12, address_bytes.size(), address_bytes.begin());
+            out.push_back(eth_checksum_address(address_bytes));
         }
     }
     return out;
