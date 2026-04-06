@@ -2,6 +2,7 @@
 #include "common.hpp"
 
 #include <array>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <regex>
@@ -37,6 +38,18 @@ double parse_number(const std::string& raw) {
     }
 
     return std::strtod(normalized.c_str(), nullptr);
+}
+
+bool is_plain_unsigned_integer(const std::string& text) {
+    if (text.empty()) {
+        return false;
+    }
+    for (char ch : text) {
+        if (!std::isdigit(static_cast<unsigned char>(ch))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::string shell_escape_single_quote(const std::string& input) {
@@ -130,7 +143,12 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
     if (m[1].str().empty()) {
         return 0.0;
     }
-    return std::strtod(m[1].str().c_str(), nullptr);
+    const std::string lamports_text = m[1].str();
+    if (!is_plain_unsigned_integer(lamports_text)) {
+        return 0.0;
+    }
+    const double lamports = std::strtod(lamports_text.c_str(), nullptr);
+    return lamports / 1000000000.0;
 }
 
 } // namespace chains
