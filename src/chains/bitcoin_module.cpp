@@ -60,33 +60,19 @@ double parse_satoshis_response(const std::string& raw_response) {
     if (has_funded && has_spent) {
         return std::strtod(funded[1].str().c_str(), nullptr) - std::strtod(spent[1].str().c_str(), nullptr);
     }
-
-    std::string numeric;
-    numeric.reserve(raw_response.size());
-
-    for (const char ch : raw_response) {
-        const unsigned char uch = static_cast<unsigned char>(ch);
-        if (std::isdigit(uch) != 0 || ch == '.' || ch == ',' || ch == '+' || ch == '-') {
-            numeric.push_back(ch);
-        }
-    }
-
-    if (numeric.empty()) {
+    const auto begin =
+        std::find_if_not(raw_response.begin(), raw_response.end(), [](unsigned char c) { return std::isspace(c) != 0; });
+    const auto end =
+        std::find_if_not(raw_response.rbegin(), raw_response.rend(), [](unsigned char c) { return std::isspace(c) != 0; })
+            .base();
+    if (begin >= end) {
         return 0.0;
     }
-
-    for (char& ch : numeric) {
-        if (ch == ',') {
-            ch = '.';
-        }
-    }
-
-    char* end_ptr = nullptr;
-    const double parsed = std::strtod(numeric.c_str(), &end_ptr);
-    if (end_ptr == numeric.c_str()) {
+    const std::string trimmed(begin, end);
+    if (!std::all_of(trimmed.begin(), trimmed.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
         return 0.0;
     }
-    return parsed;
+    return std::strtod(trimmed.c_str(), nullptr);
 }
 } // namespace
 

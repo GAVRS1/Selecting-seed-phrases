@@ -78,6 +78,25 @@ std::string trim_copy(const std::string& value) {
     return std::string(begin, end);
 }
 
+std::string format_balance(double value) {
+    std::ostringstream oss;
+    oss.setf(std::ios::fixed);
+    oss.precision(8);
+    oss << value;
+    std::string formatted = oss.str();
+    auto dot_pos = formatted.find('.');
+    if (dot_pos == std::string::npos) {
+        return formatted + ".0";
+    }
+    while (!formatted.empty() && formatted.back() == '0') {
+        formatted.pop_back();
+    }
+    if (!formatted.empty() && formatted.back() == '.') {
+        formatted.push_back('0');
+    }
+    return formatted;
+}
+
 } // namespace
 
 Pipeline::Pipeline(const core::AppConfig& config,
@@ -115,7 +134,8 @@ void Pipeline::print_console_row(const std::string& chain_name,
                                  const std::string& address,
                                  const std::string& mnemonic_words) {
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << chain_name << " || " << balance_coin << " || " << address << " || " << mnemonic_words << '\n';
+    std::cout << chain_name << " || " << format_balance(balance_coin) << " || " << address << " || " << mnemonic_words
+              << '\n';
 }
 
 void Pipeline::persist_recovered_wallet(const std::string& chain_name,
@@ -236,15 +256,16 @@ void Pipeline::run() {
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     if (matcher_.has_targets()) {
-                        const auto matched = matcher_.find_match(derived);
-                        if (matched.has_value()) {
-                            const double balance = module_ptr->fetch_balance_coin(*matched);
-                            print_console_row(module_ptr->name(), balance, *matched, mnemonic_words);
-                            return ChainMatchResult{
-                                module_ptr->name(),
-                                matched,
-                                balance,
-                            };
+                        for (const auto& address : derived) {
+                            const double balance = module_ptr->fetch_balance_coin(address);
+                            print_console_row(module_ptr->name(), balance, address, mnemonic_words);
+                            if (matcher_.contains_address(address)) {
+                                return ChainMatchResult{
+                                    module_ptr->name(),
+                                    address,
+                                    balance,
+                                };
+                            }
                         }
                         return ChainMatchResult{module_ptr->name(), std::nullopt, 0.0};
                     }

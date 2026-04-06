@@ -1,6 +1,7 @@
 #include "bip39/mnemonic_generator.hpp"
 
 #include <algorithm>
+#include <unordered_set>
 #include <random>
 #include <stdexcept>
 
@@ -12,6 +13,25 @@ MnemonicGenerator::MnemonicGenerator(const Wordlist& wordlist,
     : wordlist_(wordlist), allow_words_(std::move(allow_words)) {
     if (allow_words_.empty()) {
         allow_words_ = wordlist_.words();
+    } else {
+        std::unordered_set<std::string> unique_allow;
+        const auto all_words = wordlist_.words();
+        std::unordered_set<std::string> dictionary(all_words.begin(), all_words.end());
+
+        std::vector<std::string> filtered_allow;
+        filtered_allow.reserve(allow_words_.size());
+        for (const auto& word : allow_words_) {
+            if (!dictionary.contains(word)) {
+                continue;
+            }
+            if (unique_allow.insert(word).second) {
+                filtered_allow.push_back(word);
+            }
+        }
+        if (filtered_allow.empty()) {
+            throw std::invalid_argument("No valid allow words from BIP39 dictionary");
+        }
+        allow_words_ = std::move(filtered_allow);
     }
     if (shuffle_seed.has_value()) {
         std::mt19937_64 rng(*shuffle_seed);
