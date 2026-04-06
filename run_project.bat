@@ -52,6 +52,8 @@ if not exist recovered_wallets.txt (
 )
 
 set "TEMPLATE=abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability"
+REM 0 = unlimited search. Use a positive number to stop automatically after N valid candidates.
+set "MAX_CANDIDATES=0"
 set "RECOVERY_EXE=build\recovery_tool.exe"
 if not exist "%RECOVERY_EXE%" (
   if exist "build\Release\recovery_tool.exe" (
@@ -67,9 +69,9 @@ if not exist "%RECOVERY_EXE%" (
 )
 
 echo Opening separate consoles for BTC / ETH / SOL...
-start "BTC recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "btc" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-btc "m/84'/0'/0'/0/{i}" --scan-limit 20 --max-candidates 100000 --threads 8"
-start "ETH recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "eth" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-eth "m/44'/60'/0'/0/{i}" --scan-limit 20 --max-candidates 100000 --threads 8"
-start "SOL recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "sol" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-sol "m/44'/501'/{i}'/0'" --scan-limit 20 --max-candidates 100000 --threads 8"
+start "BTC recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "btc" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-btc "m/84'/0'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
+start "ETH recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "eth" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-eth "m/44'/60'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
+start "SOL recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "sol" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-sol "m/44'/501'/{i}'/0'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
 
 echo.
 echo Consoles started.
