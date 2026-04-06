@@ -16,6 +16,9 @@ Wordlist::Wordlist(const std::string& file_path) {
         if (word.empty()) {
             continue;
         }
+        if (index_.contains(word)) {
+            throw std::runtime_error("Wordlist contains duplicate word: " + word);
+        }
         index_[word] = static_cast<int>(words_.size());
         words_.push_back(word);
     }
@@ -36,6 +39,10 @@ int Wordlist::index_of(const std::string& word) const {
 
 const std::vector<std::string>& Wordlist::words() const {
     return words_;
+}
+
+bool Wordlist::has_full_bip39_english_size() const {
+    return words_.size() == 2048;
 }
 
 } // namespace bip39
