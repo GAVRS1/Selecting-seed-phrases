@@ -56,18 +56,7 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.max_candidates = std::stoull(argv[++i]);
         } else if (arg == "--threads" && i + 1 < argc) {
             cfg.threads = static_cast<std::uint32_t>(std::stoul(argv[++i]));
-        } else if (arg == "--wallet-queue-dir" && i + 1 < argc) {
-            cfg.wallet_queue_dir = argv[++i];
-        } else if (arg == "--balance-checker") {
-            cfg.balance_checker_mode = true;
         }
-    }
-
-    if (cfg.balance_checker_mode) {
-        if (cfg.wallet_queue_dir.empty()) {
-            throw std::invalid_argument("--balance-checker requires --wallet-queue-dir");
-        }
-        return cfg;
     }
 
     if (cfg.template_words.empty() && cfg.manual_wallets_path.empty()) {
