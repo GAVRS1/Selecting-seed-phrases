@@ -51,7 +51,9 @@ if not exist recovered_wallets.txt (
   type nul > recovered_wallets.txt
 )
 
-set "TEMPLATE=abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability"
+REM By default search all 12 positions from the active wordlist.
+REM If you know some positions exactly, replace corresponding '*' with known words.
+set "TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
 REM 0 = unlimited search. Use a positive number to stop automatically after N valid candidates.
 set "MAX_CANDIDATES=0"
 set "RECOVERY_EXE=build\recovery_tool.exe"
