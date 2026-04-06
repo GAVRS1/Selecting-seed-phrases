@@ -23,7 +23,9 @@ struct AppConfig {
     std::string recovered_wallets_path{"recovered_wallets.txt"};
     std::string bip39_passphrase;
     uint32_t scan_limit{20};
-    uint64_t max_candidates{100000};
+    // 0 means "no artificial cap" (iterate until the generator exhausts variants
+    // or pipeline stop condition triggers).
+    uint64_t max_candidates{0};
     uint32_t threads{4};
 };
 

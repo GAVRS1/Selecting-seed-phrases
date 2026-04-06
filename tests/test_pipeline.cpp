@@ -22,7 +22,7 @@ int main() {
     cfg.template_words = core::Mnemonic(12, "alpha");
     cfg.paths_btc = {"m/84'/0'/0'/0/{i}"};
     cfg.scan_limit = 1;
-    cfg.max_candidates = 1;
+    cfg.max_candidates = 0;
     cfg.threads = 1;
 
     engine::Matcher matcher(std::unordered_set<std::string>{"non-existing"});
