@@ -130,9 +130,7 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
     if (m[1].str().empty()) {
         return 0.0;
     }
-
-    const long double lamports = std::stold(m[1].str());
-    return static_cast<double>(lamports / 1000000000.0L);
+    return std::strtod(m[1].str().c_str(), nullptr);
 }
 
 } // namespace chains
