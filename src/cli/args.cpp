@@ -43,6 +43,11 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.manual_wallets_path = argv[++i];
         } else if (arg == "--bip39-passphrase" && i + 1 < argc) {
             cfg.bip39_passphrase = argv[++i];
+        } else if (arg == "--shuffle-words") {
+            cfg.shuffle_words = true;
+        } else if (arg == "--shuffle-seed" && i + 1 < argc) {
+            cfg.shuffle_seed = static_cast<std::uint64_t>(std::stoull(argv[++i]));
+            cfg.shuffle_words = true;
         } else if (arg == "--wordlist" && i + 1 < argc) {
             cfg.wordlist_path = argv[++i];
         } else if (arg == "--scan-limit" && i + 1 < argc) {

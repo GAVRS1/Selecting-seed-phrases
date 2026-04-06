@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,8 @@ struct AppConfig {
     std::string recovered_wallets_path{"recovered_wallets.txt"};
     std::string manual_wallets_path;
     std::string bip39_passphrase;
+    bool shuffle_words{true};
+    std::optional<uint64_t> shuffle_seed;
     uint32_t scan_limit{20};
     // 0 means "no artificial cap" (iterate until the generator exhausts variants
     // or pipeline stop condition triggers).
