@@ -5,6 +5,7 @@
 #include "core/types.hpp"
 
 #include <functional>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,6 +27,7 @@ public:
 private:
     const Wordlist& wordlist_;
     std::vector<std::string> allow_words_;
+    std::optional<std::uint64_t> shuffle_seed_;
 };
 
 } // namespace bip39
