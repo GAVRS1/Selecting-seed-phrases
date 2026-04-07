@@ -20,13 +20,9 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(_WIN32) || defined(_WIN64)
-#include <windows.h>
-#elif defined(__unix__) || defined(__APPLE__)
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
-#endif
 
 namespace engine {
 
@@ -131,54 +127,6 @@ bool claim_seen_mnemonic(const std::string& path, const std::string& mnemonic_wo
         }
     }
 
-#if defined(_WIN32) || defined(_WIN64)
-    HANDLE file = CreateFileA(path.c_str(),
-                              GENERIC_READ | GENERIC_WRITE,
-                              FILE_SHARE_READ | FILE_SHARE_WRITE,
-                              nullptr,
-                              OPEN_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL,
-                              nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        throw std::runtime_error("Failed to open seen mnemonics file: " + path);
-    }
-
-    OVERLAPPED lock_overlapped{};
-    if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &lock_overlapped)) {
-        CloseHandle(file);
-        throw std::runtime_error("Failed to lock seen mnemonics file: " + path);
-    }
-
-    std::ifstream in(path);
-    std::string line;
-    while (std::getline(in, line)) {
-        if (trim_copy(line) == mnemonic_words) {
-            UnlockFileEx(file, 0, MAXDWORD, MAXDWORD, &lock_overlapped);
-            CloseHandle(file);
-            return false;
-        }
-    }
-
-    const std::string payload = mnemonic_words + '\n';
-    if (SetFilePointer(file, 0, nullptr, FILE_END) == INVALID_SET_FILE_POINTER &&
-        GetLastError() != NO_ERROR) {
-        UnlockFileEx(file, 0, MAXDWORD, MAXDWORD, &lock_overlapped);
-        CloseHandle(file);
-        throw std::runtime_error("Failed to seek seen mnemonics file: " + path);
-    }
-
-    DWORD written = 0;
-    if (!WriteFile(file, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) ||
-        written != payload.size()) {
-        UnlockFileEx(file, 0, MAXDWORD, MAXDWORD, &lock_overlapped);
-        CloseHandle(file);
-        throw std::runtime_error("Failed to append seen mnemonics file: " + path);
-    }
-
-    UnlockFileEx(file, 0, MAXDWORD, MAXDWORD, &lock_overlapped);
-    CloseHandle(file);
-    return true;
-#elif defined(__unix__) || defined(__APPLE__)
     const int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0644);
     if (fd < 0) {
         throw std::runtime_error("Failed to open seen mnemonics file: " + path);
@@ -222,21 +170,6 @@ bool claim_seen_mnemonic(const std::string& path, const std::string& mnemonic_wo
     ::flock(fd, LOCK_UN);
     close_fd();
     return true;
-#else
-    std::ifstream in(path);
-    std::string line;
-    while (std::getline(in, line)) {
-        if (trim_copy(line) == mnemonic_words) {
-            return false;
-        }
-    }
-    std::ofstream out(path, std::ios::app);
-    if (!out) {
-        throw std::runtime_error("Failed to append seen mnemonics file: " + path);
-    }
-    out << mnemonic_words << '\n';
-    return true;
-#endif
 }
 
 } // namespace
