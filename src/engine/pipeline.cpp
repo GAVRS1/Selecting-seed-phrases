@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <filesystem>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -18,6 +19,8 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 namespace engine {
 
@@ -114,12 +117,40 @@ std::unordered_set<std::string> load_seen_mnemonics(const std::string& path) {
     return seen;
 }
 
-void append_seen_mnemonic(const std::string& path, const std::string& mnemonic_words) {
+bool claim_seen_mnemonic(const std::string& path, const std::string& mnemonic_words) {
+    if (!path.empty()) {
+        std::filesystem::path file_path(path);
+        if (file_path.has_parent_path()) {
+            std::filesystem::create_directories(file_path.parent_path());
+        }
+    }
+    const std::filesystem::path lock_path = path + ".lock";
+    while (!std::filesystem::create_directory(lock_path)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    auto unlock = [&lock_path]() {
+        std::error_code ec;
+        std::filesystem::remove(lock_path, ec);
+    };
+
+    std::ifstream in(path);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (trim_copy(line) == mnemonic_words) {
+            unlock();
+            return false;
+        }
+    }
+
     std::ofstream out(path, std::ios::app);
     if (!out) {
-        throw std::runtime_error("Failed to open seen mnemonics file: " + path);
+        unlock();
+        throw std::runtime_error("Failed to append seen mnemonics file: " + path);
     }
     out << mnemonic_words << '\n';
+    unlock();
+    return true;
 }
 
 } // namespace
@@ -271,7 +302,10 @@ void Pipeline::run() {
             if (seen_mnemonics.contains(mnemonic_words)) {
                 return false;
             }
-            append_seen_mnemonic(config_.seen_mnemonics_path, mnemonic_words);
+            if (!claim_seen_mnemonic(config_.seen_mnemonics_path, mnemonic_words)) {
+                seen_mnemonics.insert(mnemonic_words);
+                return false;
+            }
             seen_mnemonics.insert(mnemonic_words);
             auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
