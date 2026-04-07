@@ -12,10 +12,13 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
+#include <filesystem>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
@@ -223,6 +226,42 @@ bool claim_seen_mnemonic(const std::string& path, const std::string& mnemonic_wo
     return true;
 }
 
+class SeenFileLockGuard {
+public:
+    explicit SeenFileLockGuard(std::string lock_path) : lock_path_(std::move(lock_path)) {
+        while (!std::filesystem::create_directory(lock_path_)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    ~SeenFileLockGuard() {
+        std::error_code ec;
+        std::filesystem::remove_all(lock_path_, ec);
+    }
+
+private:
+    std::string lock_path_;
+};
+
+bool mark_seen_mnemonic_atomic(const std::string& path,
+                               const std::string& mnemonic_words,
+                               std::unordered_set<std::string>& local_seen_cache) {
+    if (local_seen_cache.contains(mnemonic_words)) {
+        return false;
+    }
+
+    SeenFileLockGuard lock(path + ".lock");
+    auto latest_seen = load_seen_mnemonics(path);
+    if (latest_seen.contains(mnemonic_words)) {
+        local_seen_cache.insert(mnemonic_words);
+        return false;
+    }
+
+    append_seen_mnemonic(path, mnemonic_words);
+    local_seen_cache.insert(mnemonic_words);
+    return true;
+}
+
 } // namespace
 
 Pipeline::Pipeline(const core::AppConfig& config,
@@ -369,7 +408,7 @@ void Pipeline::run() {
             ++processed_candidates;
 
             const std::string mnemonic_words = mnemonic_to_string(mnemonic);
-            if (seen_mnemonics.contains(mnemonic_words)) {
+            if (!mark_seen_mnemonic_atomic(config_.seen_mnemonics_path, mnemonic_words, seen_mnemonics)) {
                 return false;
             }
             if (!claim_seen_mnemonic(config_.seen_mnemonics_path, mnemonic_words)) {

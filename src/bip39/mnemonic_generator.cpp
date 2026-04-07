@@ -1,9 +1,10 @@
 #include "bip39/mnemonic_generator.hpp"
 
 #include <algorithm>
-#include <unordered_set>
+#include <numeric>
 #include <random>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace bip39 {
 
