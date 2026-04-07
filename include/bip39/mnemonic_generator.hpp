@@ -26,6 +26,7 @@ public:
 private:
     const Wordlist& wordlist_;
     std::vector<std::string> allow_words_;
+    std::optional<std::uint64_t> traversal_seed_;
 };
 
 } // namespace bip39

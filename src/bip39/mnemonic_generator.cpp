@@ -1,9 +1,10 @@
 #include "bip39/mnemonic_generator.hpp"
 
 #include <algorithm>
-#include <unordered_set>
+#include <numeric>
 #include <random>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace bip39 {
 
@@ -33,10 +34,7 @@ MnemonicGenerator::MnemonicGenerator(const Wordlist& wordlist,
         }
         allow_words_ = std::move(filtered_allow);
     }
-    if (shuffle_seed.has_value()) {
-        std::mt19937_64 rng(*shuffle_seed);
-        std::shuffle(allow_words_.begin(), allow_words_.end(), rng);
-    }
+    traversal_seed_ = shuffle_seed;
 }
 
 std::size_t MnemonicGenerator::generate(
@@ -51,6 +49,7 @@ std::size_t MnemonicGenerator::generate(
 
     std::size_t produced = 0;
     core::Mnemonic current = pattern;
+    std::mt19937_64 rng(traversal_seed_.value_or(static_cast<std::uint64_t>(std::random_device{}())));
 
     std::function<bool(std::size_t)> dfs = [&](std::size_t pos) {
         if (max_candidates > 0 && produced >= max_candidates) {
@@ -69,7 +68,14 @@ std::size_t MnemonicGenerator::generate(
             return dfs(pos + 1);
         }
 
-        for (const auto& candidate_word : allow_words_) {
+        std::vector<std::size_t> candidate_indices(allow_words_.size());
+        std::iota(candidate_indices.begin(), candidate_indices.end(), 0);
+        if (!candidate_indices.empty()) {
+            std::shuffle(candidate_indices.begin(), candidate_indices.end(), rng);
+        }
+
+        for (std::size_t idx : candidate_indices) {
+            const auto& candidate_word = allow_words_[idx];
             current[pos] = candidate_word;
             if (dfs(pos + 1)) {
                 return true;
