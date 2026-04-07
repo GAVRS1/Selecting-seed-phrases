@@ -22,6 +22,15 @@
 #include <chrono>
 #include <thread>
 
+#ifdef _WIN32
+#include <io.h>
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 namespace engine {
 
 namespace {
@@ -124,32 +133,93 @@ bool claim_seen_mnemonic(const std::string& path, const std::string& mnemonic_wo
             std::filesystem::create_directories(file_path.parent_path());
         }
     }
-    const std::filesystem::path lock_path = path + ".lock";
-    while (!std::filesystem::create_directory(lock_path)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+#ifdef _WIN32
+    const int fd = ::_open(path.c_str(), _O_RDWR | _O_CREAT, _S_IREAD | _S_IWRITE);
+#else
+    const int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0644);
+#endif
+    if (fd < 0) {
+        throw std::runtime_error("Failed to open seen mnemonics file: " + path);
     }
 
-    auto unlock = [&lock_path]() {
-        std::error_code ec;
-        std::filesystem::remove(lock_path, ec);
+    auto close_fd = [&fd]() {
+        if (fd >= 0) {
+#ifdef _WIN32
+            ::_close(fd);
+#else
+            ::close(fd);
+#endif
+        }
     };
+
+#ifdef _WIN32
+    HANDLE file_handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    if (file_handle == INVALID_HANDLE_VALUE) {
+        close_fd();
+        throw std::runtime_error("Failed to get file handle for seen mnemonics file: " + path);
+    }
+
+    OVERLAPPED lock_region{};
+    if (!::LockFileEx(file_handle, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &lock_region)) {
+        close_fd();
+        throw std::runtime_error("Failed to lock seen mnemonics file: " + path);
+    }
+#else
+    if (::flock(fd, LOCK_EX) != 0) {
+        close_fd();
+        throw std::runtime_error("Failed to lock seen mnemonics file: " + path);
+    }
+#endif
 
     std::ifstream in(path);
     std::string line;
     while (std::getline(in, line)) {
         if (trim_copy(line) == mnemonic_words) {
-            unlock();
+#ifdef _WIN32
+            ::UnlockFileEx(file_handle, 0, MAXDWORD, MAXDWORD, &lock_region);
+#else
+            ::flock(fd, LOCK_UN);
+#endif
+            close_fd();
             return false;
         }
     }
 
-    std::ofstream out(path, std::ios::app);
-    if (!out) {
-        unlock();
+#ifdef _WIN32
+    if (::_lseeki64(fd, 0, SEEK_END) < 0) {
+        ::UnlockFileEx(file_handle, 0, MAXDWORD, MAXDWORD, &lock_region);
+        close_fd();
+        throw std::runtime_error("Failed to seek seen mnemonics file: " + path);
+    }
+#else
+    if (::lseek(fd, 0, SEEK_END) < 0) {
+        ::flock(fd, LOCK_UN);
+        close_fd();
+        throw std::runtime_error("Failed to seek seen mnemonics file: " + path);
+    }
+#endif
+
+    const std::string payload = mnemonic_words + '\n';
+#ifdef _WIN32
+    const int written = ::_write(fd, payload.data(), static_cast<unsigned int>(payload.size()));
+    if (written != static_cast<int>(payload.size())) {
+        ::UnlockFileEx(file_handle, 0, MAXDWORD, MAXDWORD, &lock_region);
+        close_fd();
         throw std::runtime_error("Failed to append seen mnemonics file: " + path);
     }
-    out << mnemonic_words << '\n';
-    unlock();
+    ::UnlockFileEx(file_handle, 0, MAXDWORD, MAXDWORD, &lock_region);
+#else
+    const ssize_t written = ::write(fd, payload.data(), payload.size());
+    if (written != static_cast<ssize_t>(payload.size())) {
+        ::flock(fd, LOCK_UN);
+        close_fd();
+        throw std::runtime_error("Failed to append seen mnemonics file: " + path);
+    }
+
+    ::flock(fd, LOCK_UN);
+#endif
+    close_fd();
     return true;
 }
 
