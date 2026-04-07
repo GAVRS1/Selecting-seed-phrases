@@ -11,7 +11,7 @@ namespace bip39 {
 MnemonicGenerator::MnemonicGenerator(const Wordlist& wordlist,
                                      std::vector<std::string> allow_words,
                                      std::optional<std::uint64_t> shuffle_seed)
-    : wordlist_(wordlist), allow_words_(std::move(allow_words)) {
+    : wordlist_(wordlist), allow_words_(std::move(allow_words)), shuffle_seed_(shuffle_seed) {
     if (allow_words_.empty()) {
         allow_words_ = wordlist_.words();
     } else {
@@ -34,7 +34,6 @@ MnemonicGenerator::MnemonicGenerator(const Wordlist& wordlist,
         }
         allow_words_ = std::move(filtered_allow);
     }
-    traversal_seed_ = shuffle_seed;
 }
 
 std::size_t MnemonicGenerator::generate(
@@ -49,7 +48,19 @@ std::size_t MnemonicGenerator::generate(
 
     std::size_t produced = 0;
     core::Mnemonic current = pattern;
-    std::mt19937_64 rng(traversal_seed_.value_or(static_cast<std::uint64_t>(std::random_device{}())));
+    std::vector<std::vector<std::string>> choices_by_position(current.size());
+
+    const std::uint64_t effective_seed =
+        shuffle_seed_.has_value() ? *shuffle_seed_ : static_cast<std::uint64_t>(std::random_device{}());
+    std::mt19937_64 seed_rng(effective_seed);
+
+    for (std::size_t pos = 0; pos < current.size(); ++pos) {
+        if (current[pos] != "*") {
+            continue;
+        }
+        choices_by_position[pos] = allow_words_;
+        std::shuffle(choices_by_position[pos].begin(), choices_by_position[pos].end(), seed_rng);
+    }
 
     std::function<bool(std::size_t)> dfs = [&](std::size_t pos) {
         if (max_candidates > 0 && produced >= max_candidates) {
@@ -68,14 +79,8 @@ std::size_t MnemonicGenerator::generate(
             return dfs(pos + 1);
         }
 
-        std::vector<std::size_t> candidate_indices(allow_words_.size());
-        std::iota(candidate_indices.begin(), candidate_indices.end(), 0);
-        if (!candidate_indices.empty()) {
-            std::shuffle(candidate_indices.begin(), candidate_indices.end(), rng);
-        }
-
-        for (std::size_t idx : candidate_indices) {
-            const auto& candidate_word = allow_words_[idx];
+        const auto& choices = choices_by_position[pos];
+        for (const auto& candidate_word : choices) {
             current[pos] = candidate_word;
             if (dfs(pos + 1)) {
                 return true;
