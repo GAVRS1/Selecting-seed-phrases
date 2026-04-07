@@ -7,6 +7,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <filesystem>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -18,6 +19,10 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
+
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 namespace engine {
 
@@ -114,12 +119,57 @@ std::unordered_set<std::string> load_seen_mnemonics(const std::string& path) {
     return seen;
 }
 
-void append_seen_mnemonic(const std::string& path, const std::string& mnemonic_words) {
-    std::ofstream out(path, std::ios::app);
-    if (!out) {
+bool claim_seen_mnemonic(const std::string& path, const std::string& mnemonic_words) {
+    if (!path.empty()) {
+        std::filesystem::path file_path(path);
+        if (file_path.has_parent_path()) {
+            std::filesystem::create_directories(file_path.parent_path());
+        }
+    }
+
+    const int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0644);
+    if (fd < 0) {
         throw std::runtime_error("Failed to open seen mnemonics file: " + path);
     }
-    out << mnemonic_words << '\n';
+
+    auto close_fd = [&fd]() {
+        if (fd >= 0) {
+            ::close(fd);
+        }
+    };
+
+    if (::flock(fd, LOCK_EX) != 0) {
+        close_fd();
+        throw std::runtime_error("Failed to lock seen mnemonics file: " + path);
+    }
+
+    std::ifstream in(path);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (trim_copy(line) == mnemonic_words) {
+            ::flock(fd, LOCK_UN);
+            close_fd();
+            return false;
+        }
+    }
+
+    if (::lseek(fd, 0, SEEK_END) < 0) {
+        ::flock(fd, LOCK_UN);
+        close_fd();
+        throw std::runtime_error("Failed to seek seen mnemonics file: " + path);
+    }
+
+    const std::string payload = mnemonic_words + '\n';
+    const ssize_t written = ::write(fd, payload.data(), payload.size());
+    if (written != static_cast<ssize_t>(payload.size())) {
+        ::flock(fd, LOCK_UN);
+        close_fd();
+        throw std::runtime_error("Failed to append seen mnemonics file: " + path);
+    }
+
+    ::flock(fd, LOCK_UN);
+    close_fd();
+    return true;
 }
 
 } // namespace
@@ -271,7 +321,10 @@ void Pipeline::run() {
             if (seen_mnemonics.contains(mnemonic_words)) {
                 return false;
             }
-            append_seen_mnemonic(config_.seen_mnemonics_path, mnemonic_words);
+            if (!claim_seen_mnemonic(config_.seen_mnemonics_path, mnemonic_words)) {
+                seen_mnemonics.insert(mnemonic_words);
+                return false;
+            }
             seen_mnemonics.insert(mnemonic_words);
             auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
