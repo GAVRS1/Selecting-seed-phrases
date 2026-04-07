@@ -26,7 +26,9 @@
 #include <thread>
 
 #ifdef _WIN32
+#include <fcntl.h>
 #include <io.h>
+#include <sys/stat.h>
 #include <windows.h>
 #else
 #include <fcntl.h>
@@ -257,7 +259,7 @@ bool mark_seen_mnemonic_atomic(const std::string& path,
         return false;
     }
 
-    append_seen_mnemonic(path, mnemonic_words);
+    claim_seen_mnemonic(path, mnemonic_words);
     local_seen_cache.insert(mnemonic_words);
     return true;
 }
