@@ -7,6 +7,20 @@ cd /d "%~dp0"
 set "CMAKE_EXTRA_ARGS="
 set "VCPKG_EFFECTIVE_ROOT="
 
+if exist "vcpkg.json" (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Get-Content -Raw -Path '.\vcpkg.json' | ConvertFrom-Json | Out-Null; exit 0 } catch { exit 1 }"
+  if errorlevel 1 (
+    echo.
+    echo Detected invalid vcpkg.json in repository root.
+    echo It looks like the file is not valid JSON ^(for example, a pasted PowerShell command^).
+    echo.
+    echo Repair with:
+    echo   powershell -NoProfile -ExecutionPolicy Bypass -Command "$json = @{ name='selecting-seed-phrases'; 'version-string'='0.1.0'; dependencies=@('openssl') } ^| ConvertTo-Json -Depth 5; [System.IO.File]::WriteAllText('.\vcpkg.json', $json, (New-Object System.Text.UTF8Encoding($false)))"
+    echo.
+    goto :error
+  )
+)
+
 REM Prefer local ./vcpkg inside this repo if it exists.
 if exist "%cd%\vcpkg\scripts\buildsystems\vcpkg.cmake" (
   set "VCPKG_EFFECTIVE_ROOT=%cd%\vcpkg"
