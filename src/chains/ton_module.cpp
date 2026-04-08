@@ -17,6 +17,14 @@
 namespace chains {
 
 namespace {
+std::string toncenter_api_key() {
+    const char* value = std::getenv("TONCENTER_API_KEY");
+    if (value == nullptr) {
+        return {};
+    }
+    return value;
+}
+
 std::string shell_escape_single_quote(const std::string& input) {
     std::string out;
     out.reserve(input.size() + 8);
