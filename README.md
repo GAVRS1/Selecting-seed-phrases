@@ -82,9 +82,6 @@ $json = @{
 [System.IO.File]::WriteAllText(".\vcpkg.json", $json, (New-Object System.Text.UTF8Encoding($false)))
 ```
 
-`run_project.bat` and `run_manual_test.bat` now attempt to auto-repair this case by backing up the broken
-file to `vcpkg.json.broken` and restoring a default valid `vcpkg.json`.
-
 Alternative (manual OpenSSL install):
 
 ```powershell

@@ -13,24 +13,11 @@ if exist "vcpkg.json" (
     echo.
     echo Detected invalid vcpkg.json in repository root.
     echo It looks like the file is not valid JSON ^(for example, a pasted PowerShell command^).
-    echo Creating backup vcpkg.json.broken and restoring a valid default manifest...
     echo.
-    copy /y "vcpkg.json" "vcpkg.json.broken" >nul
-    (
-      echo {
-      echo   "name": "selecting-seed-phrases",
-      echo   "version-string": "0.1.0",
-      echo   "dependencies": [
-      echo     "openssl"
-      echo   ]
-      echo }
-    ) > "vcpkg.json"
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Get-Content -Raw -Path '.\vcpkg.json' | ConvertFrom-Json | Out-Null; exit 0 } catch { exit 1 }"
-    if errorlevel 1 (
-      echo Failed to repair vcpkg.json automatically.
-      goto :error
-    )
-    echo vcpkg.json restored successfully.
+    echo Repair with:
+    echo   powershell -NoProfile -ExecutionPolicy Bypass -Command "$json = @{ name='selecting-seed-phrases'; 'version-string'='0.1.0'; dependencies=@('openssl') } ^| ConvertTo-Json -Depth 5; [System.IO.File]::WriteAllText('.\vcpkg.json', $json, (New-Object System.Text.UTF8Encoding($false)))"
+    echo.
+    goto :error
   )
 )
 
