@@ -94,27 +94,16 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
         "-ContentType 'application/json' -Body $b).Content\"";
 #else
     const std::string balance_command =
-        "curl -sS --max-time 10 --retry 2 --retry-all-errors "
-        "-H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
+        "curl -fsSL --max-time 10 -H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
         shell_escape_single_quote(balance_payload) + "' 'https://api.mainnet-beta.solana.com'";
     const std::string token_accounts_command =
-        "curl -sS --max-time 10 --retry 2 --retry-all-errors "
-        "-H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
+        "curl -fsSL --max-time 10 -H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
         shell_escape_single_quote(token_accounts_payload) + "' 'https://api.mainnet-beta.solana.com'";
 #endif
 
     const std::string balance_response = run_command(balance_command);
     std::smatch m;
     if (std::regex_search(balance_response, m, std::regex(R"("value"\s*:\s*([0-9]+))")) && !m[1].str().empty()) {
-        const std::string lamports_text = m[1].str();
-        if (is_plain_unsigned_integer(lamports_text)) {
-            const double lamports = std::strtod(lamports_text.c_str(), nullptr);
-            if (lamports > 0.0) {
-                return lamports / 1000000000.0;
-            }
-        }
-    }
-    if (std::regex_search(balance_response, m, std::regex(R"("lamports"\s*:\s*([0-9]+))")) && !m[1].str().empty()) {
         const std::string lamports_text = m[1].str();
         if (is_plain_unsigned_integer(lamports_text)) {
             const double lamports = std::strtod(lamports_text.c_str(), nullptr);
