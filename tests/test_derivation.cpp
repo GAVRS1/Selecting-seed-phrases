@@ -1,5 +1,6 @@
 #include "chains/bitcoin_module.hpp"
 #include "chains/ethereum_module.hpp"
+#include "chains/ton_module.hpp"
 #include "core/secure_buffer.hpp"
 
 #include <cassert>
@@ -17,6 +18,14 @@ int main() {
     for (const auto& address : eth_addresses) {
         assert(address.rfind("0x", 0) == 0);
         assert(address.size() == 42);
+    }
+
+    chains::TonModule ton_module;
+    auto ton_addresses = ton_module.derive_addresses(seed, {"m/44'/607'/0'/{i}'"}, 2);
+    assert(ton_addresses.size() == 2);
+    for (const auto& address : ton_addresses) {
+        assert(address.rfind("0:", 0) == 0);
+        assert(address.size() == 66);
     }
 
     std::cout << "test_derivation passed\n";

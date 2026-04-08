@@ -61,6 +61,8 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.paths_eth = split_csv(argv[++i]);
         } else if (arg == "--paths-sol" && i + 1 < argc) {
             cfg.paths_sol = split_csv(argv[++i]);
+        } else if (arg == "--paths-ton" && i + 1 < argc) {
+            cfg.paths_ton = split_csv(argv[++i]);
         } else if (arg == "--target-addresses" && i + 1 < argc) {
             cfg.target_addresses_path = argv[++i];
         } else if (arg == "--recovered-wallets" && i + 1 < argc) {

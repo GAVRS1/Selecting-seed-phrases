@@ -73,6 +73,7 @@ std::vector<std::string> paths_for_module(const core::AppConfig& cfg, const std:
     if (name == "btc") return cfg.paths_btc;
     if (name == "eth") return cfg.paths_eth;
     if (name == "sol") return cfg.paths_sol;
+    if (name == "ton") return cfg.paths_ton;
     return {};
 }
 
