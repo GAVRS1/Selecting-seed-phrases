@@ -66,28 +66,24 @@ std::vector<std::string> TonModule::derive_addresses(
 }
 
 double TonModule::fetch_balance_coin(const std::string& address) {
-    const std::string url_primary = "https://toncenter.com/api/v2/getAddressBalance?address=" + address;
-    const std::string url_fallback = "https://tonapi.io/v2/blockchain/accounts/" + address;
+    const std::string url =
+        "https://toncenter.com/api/v3/accountStates?address=" + address + "&include_boc=false";
 #ifdef _WIN32
-    std::string ps_url = url_primary;
+    std::string ps_url = url;
     for (std::size_t pos = 0; (pos = ps_url.find('\'', pos)) != std::string::npos; pos += 2) {
         ps_url.replace(pos, 1, "''");
     }
     const std::string command =
-        "powershell -NoProfile -Command \"(Invoke-WebRequest -UseBasicParsing '" + ps_url + "').Content\"";
+        "powershell -NoProfile -Command \"(Invoke-WebRequest -UseBasicParsing -Headers "
+        "@{'accept'='application/json';'x-api-key'='fc9911887faea841d9fd6d98a5fea74bc74ed300abe2759c161c9d04319b0941'} '"
+        + ps_url + "').Content\"";
     const std::string response = run_command(command);
 #else
-    const std::string command_primary =
-        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'user-agent: Mozilla/5.0' '" +
-        shell_escape_single_quote(url_primary) + "'";
-    const std::string command_fallback =
-        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'user-agent: Mozilla/5.0' '" +
-        shell_escape_single_quote(url_fallback) + "'";
-
-    std::string response = run_command(command_primary);
-    if (parse_nanotons_response(response) <= 0.0) {
-        response = run_command(command_fallback);
-    }
+    const std::string command =
+        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'user-agent: Mozilla/5.0' -H "
+        "'x-api-key: fc9911887faea841d9fd6d98a5fea74bc74ed300abe2759c161c9d04319b0941' '" +
+        shell_escape_single_quote(url) + "'";
+    const std::string response = run_command(command);
 #endif
 
     const double nanotons = parse_nanotons_response(response);
