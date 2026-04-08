@@ -14,7 +14,7 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - `bip39::Wordlist` for wordlist loading and lookup.
 - `bip39::MnemonicValidator` with structure-level checks and a placeholder checksum routine.
 - `bip39::MnemonicGenerator` for wildcard expansion and candidate filtering.
-- `chains::IChainModule` and per-chain modules (`btc`, `eth`, `sol`).
+- `chains::IChainModule` and per-chain modules (`btc`, `eth`, `sol`, `ton`).
 - Real seed derivation via BIP-39 PBKDF2-HMAC-SHA512 and chain-specific key trees (BIP-32 for BTC/ETH, SLIP-0010 Ed25519 for SOL).
 - Ethereum addresses are output in canonical hex format with `0x` prefix.
 - `engine::Pipeline` and `engine::Matcher` for async candidate processing and address matching.
@@ -101,6 +101,7 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
   --paths-btc "m/84'/0'/0'/0/{i}" \
   --paths-eth "m/44'/60'/0'/0/{i}" \
   --paths-sol "m/44'/501'/{i}'/0'" \
+  --paths-ton "m/44'/607'/0'/{i}'" \
   --scan-limit 20 \
   --max-candidates 0 \
   --threads 8
@@ -128,6 +129,7 @@ One wallet per line:
 btc,1BoatSLRHtKNngkdXEeobR76b53LETtpyT
 eth,0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe
 sol,Vote111111111111111111111111111111111111111
+ton,0:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
 Also supported separators: `;` or a single space.
@@ -139,7 +141,7 @@ Lines starting with `#` are ignored.
 ./build/recovery_tool \
   --manual-wallets ./manual_wallets.txt \
   --recovered-wallets ./recovered_wallets.txt \
-  --chains "btc,eth,sol"
+  --chains "btc,eth,sol,ton"
 ```
 
 ## Быстрый запуск в Windows (.bat)

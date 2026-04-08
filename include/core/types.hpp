@@ -20,6 +20,7 @@ struct AppConfig {
     std::vector<std::string> paths_btc;
     std::vector<std::string> paths_eth;
     std::vector<std::string> paths_sol;
+    std::vector<std::string> paths_ton;
     std::string target_addresses_path;
     std::string recovered_wallets_path{"recovered_wallets.txt"};
     std::string seen_mnemonics_path{"seen_mnemonics.txt"};

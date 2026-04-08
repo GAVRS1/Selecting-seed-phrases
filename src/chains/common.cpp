@@ -463,6 +463,22 @@ std::string sol_address_from_private(const std::array<std::uint8_t, 32>& private
     return base58_encode(bytes);
 }
 
+std::string ton_address_from_private(const std::array<std::uint8_t, 32>& private_key) {
+    PKeyPtr pkey(EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, nullptr, private_key.data(), private_key.size()), EVP_PKEY_free);
+    if (!pkey) {
+        throw std::runtime_error("Failed to build ed25519 private key");
+    }
+
+    std::array<std::uint8_t, 32> pub{};
+    size_t pub_len = pub.size();
+    if (EVP_PKEY_get_raw_public_key(pkey.get(), pub.data(), &pub_len) != 1 || pub_len != pub.size()) {
+        throw std::runtime_error("Failed to extract ed25519 public key");
+    }
+
+    const auto hash = sha256(pub.data(), pub.size());
+    return "0:" + bytes_to_hex(hash.data(), hash.size());
+}
+
 } // namespace
 
 std::vector<std::string> derive_btc_addresses(const core::SecureBuffer& seed,
@@ -507,6 +523,20 @@ std::vector<std::string> derive_sol_addresses(const core::SecureBuffer& seed,
             auto path = parse_path(raw_path, i);
             auto node = derive_ed25519(seed, path);
             out.push_back(sol_address_from_private(node.key));
+        }
+    }
+    return out;
+}
+
+std::vector<std::string> derive_ton_addresses(const core::SecureBuffer& seed,
+                                              const std::vector<std::string>& derivation_paths,
+                                              std::uint32_t account_scan_limit) {
+    std::vector<std::string> out;
+    for (const auto& raw_path : derivation_paths) {
+        for (std::uint32_t i = 0; i < account_scan_limit; ++i) {
+            auto path = parse_path(raw_path, i);
+            auto node = derive_ed25519(seed, path);
+            out.push_back(ton_address_from_private(node.key));
         }
     }
     return out;
