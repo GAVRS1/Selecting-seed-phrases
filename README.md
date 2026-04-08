@@ -69,6 +69,22 @@ $env:VCPKG_ROOT
 Remove-Item -Recurse -Force build
 ```
 
+If `vcpkg` reports `vcpkg.json:1:1: error: Unexpected character; expected value` and shows
+something like `on expression: Set-Content -Path .\vcpkg.json ...`, your manifest file was overwritten
+with a PowerShell command text. Recreate it as valid JSON:
+
+```powershell
+$json = @{
+  name = "selecting-seed-phrases"
+  "version-string" = "0.1.0"
+  dependencies = @("openssl")
+} | ConvertTo-Json -Depth 5
+[System.IO.File]::WriteAllText(".\vcpkg.json", $json, (New-Object System.Text.UTF8Encoding($false)))
+```
+
+`run_project.bat` and `run_manual_test.bat` now attempt to auto-repair this case by backing up the broken
+file to `vcpkg.json.broken` and restoring a default valid `vcpkg.json`.
+
 Alternative (manual OpenSSL install):
 
 ```powershell
