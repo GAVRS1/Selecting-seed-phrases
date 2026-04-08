@@ -17,29 +17,6 @@
 namespace chains {
 
 namespace {
-double parse_number(const std::string& raw) {
-    std::string normalized;
-    normalized.reserve(raw.size());
-
-    for (const char ch : raw) {
-        if ((ch >= '0' && ch <= '9') || ch == '.' || ch == ',') {
-            normalized.push_back(ch);
-        }
-    }
-
-    if (normalized.empty()) {
-        return 0.0;
-    }
-
-    for (char& ch : normalized) {
-        if (ch == ',') {
-            ch = '.';
-        }
-    }
-
-    return std::strtod(normalized.c_str(), nullptr);
-}
-
 bool is_plain_unsigned_integer(const std::string& text) {
     if (text.empty()) {
         return false;
@@ -93,62 +70,55 @@ std::vector<std::string> SolanaModule::derive_addresses(
 }
 
 double SolanaModule::fetch_balance_coin(const std::string& address) {
-    const std::string url = "https://explorer.solana.com/address/" + address;
-    const std::string payload =
+    const std::string balance_payload =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getBalance\",\"params\":[\"" + address + "\"]}";
+    const std::string token_accounts_payload =
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getTokenAccountsByOwner\",\"params\":[\"" + address +
+        "\",{\"programId\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"},{\"encoding\":\"jsonParsed\"}]}";
 #ifdef _WIN32
-    std::string ps_url = url;
-    for (std::size_t pos = 0; (pos = ps_url.find('\'', pos)) != std::string::npos; pos += 2) {
-        ps_url.replace(pos, 1, "''");
+    std::string ps_balance_payload = balance_payload;
+    for (std::size_t pos = 0; (pos = ps_balance_payload.find('\'', pos)) != std::string::npos; pos += 2) {
+        ps_balance_payload.replace(pos, 1, "''");
     }
-    std::string ps_payload = payload;
-    for (std::size_t pos = 0; (pos = ps_payload.find('\'', pos)) != std::string::npos; pos += 2) {
-        ps_payload.replace(pos, 1, "''");
+    std::string ps_token_accounts_payload = token_accounts_payload;
+    for (std::size_t pos = 0; (pos = ps_token_accounts_payload.find('\'', pos)) != std::string::npos; pos += 2) {
+        ps_token_accounts_payload.replace(pos, 1, "''");
     }
-    const std::string command =
-        "powershell -NoProfile -Command \"(Invoke-WebRequest -UseBasicParsing '" + ps_url + "').Content\"";
-    const std::string command_rpc =
-        "powershell -NoProfile -Command \"$b='" + ps_payload +
+    const std::string balance_command =
+        "powershell -NoProfile -Command \"$b='" + ps_balance_payload +
+        "'; (Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'https://api.mainnet-beta.solana.com' "
+        "-ContentType 'application/json' -Body $b).Content\"";
+    const std::string token_accounts_command =
+        "powershell -NoProfile -Command \"$b='" + ps_token_accounts_payload +
         "'; (Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'https://api.mainnet-beta.solana.com' "
         "-ContentType 'application/json' -Body $b).Content\"";
 #else
-    const std::string command =
-        "curl -fsSL --max-time 10 "
-        "-H 'accept-language: en-US,en;q=0.9' "
-        "-H 'user-agent: Mozilla/5.0' '" +
-        shell_escape_single_quote(url) + "'";
-    const std::string command_rpc =
+    const std::string balance_command =
         "curl -fsSL --max-time 10 -H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
-        shell_escape_single_quote(payload) + "' 'https://api.mainnet-beta.solana.com'";
+        shell_escape_single_quote(balance_payload) + "' 'https://api.mainnet-beta.solana.com'";
+    const std::string token_accounts_command =
+        "curl -fsSL --max-time 10 -H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
+        shell_escape_single_quote(token_accounts_payload) + "' 'https://api.mainnet-beta.solana.com'";
 #endif
-    const std::string response = run_command(command);
 
+    const std::string balance_response = run_command(balance_command);
     std::smatch m;
-    const std::regex balance_cell_pattern(
-        "Balance\\s*\\(SOL\\)\\s*</td>\\s*<td[^>]*>\\s*<span[^>]*>\\s*\"?([0-9]+(?:[.,][0-9]+)?)\"?",
-        std::regex::icase);
-    if (std::regex_search(response, m, balance_cell_pattern)) {
-        return parse_number(m[1].str());
-    }
-
-    std::string rpc_response = response;
-    rpc_response = run_command(command_rpc);
-
-    if (!std::regex_search(rpc_response, m, std::regex(R"("value"\s*:\s*([0-9]+))"))) {
-        if (!std::regex_search(rpc_response, m, std::regex(R"("lamports"\s*:\s*([0-9]+))"))) {
-            return 0.0;
+    if (std::regex_search(balance_response, m, std::regex(R"("value"\s*:\s*([0-9]+))")) && !m[1].str().empty()) {
+        const std::string lamports_text = m[1].str();
+        if (is_plain_unsigned_integer(lamports_text)) {
+            const double lamports = std::strtod(lamports_text.c_str(), nullptr);
+            if (lamports > 0.0) {
+                return lamports / 1000000000.0;
+            }
         }
     }
 
-    if (m[1].str().empty()) {
-        return 0.0;
+    const std::string token_accounts_response = run_command(token_accounts_command);
+    if (std::regex_search(token_accounts_response, m, std::regex(R"("value"\s*:\s*\[\s*\{)"))) {
+        return 1e-9;
     }
-    const std::string lamports_text = m[1].str();
-    if (!is_plain_unsigned_integer(lamports_text)) {
-        return 0.0;
-    }
-    const double lamports = std::strtod(lamports_text.c_str(), nullptr);
-    return lamports / 1000000000.0;
+
+    return 0.0;
 }
 
 } // namespace chains
