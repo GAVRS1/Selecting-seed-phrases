@@ -17,6 +17,14 @@
 namespace chains {
 
 namespace {
+std::string toncenter_api_key() {
+    const char* value = std::getenv("TONCENTER_API_KEY");
+    if (value == nullptr) {
+        return {};
+    }
+    return value;
+}
+
 std::string shell_escape_single_quote(const std::string& input) {
     std::string out;
     out.reserve(input.size() + 8);
@@ -66,28 +74,25 @@ std::vector<std::string> TonModule::derive_addresses(
 }
 
 double TonModule::fetch_balance_coin(const std::string& address) {
-    const std::string url_primary = "https://toncenter.com/api/v2/getAddressBalance?address=" + address;
-    const std::string url_fallback = "https://tonapi.io/v2/blockchain/accounts/" + address;
+    const std::string url =
+        "https://toncenter.com/api/v3/accountStates?address=" + address + "&include_boc=false";
+    const std::string api_key = toncenter_api_key();
 #ifdef _WIN32
-    std::string ps_url = url_primary;
-    for (std::size_t pos = 0; (pos = ps_url.find('\'', pos)) != std::string::npos; pos += 2) {
-        ps_url.replace(pos, 1, "''");
+    std::string command =
+        "curl.exe -fsSL --max-time 10 -H \"accept: application/json\" -H \"origin: https://tonscan.org\" "
+        "-H \"referer: https://tonscan.org/\" -H \"user-agent: Mozilla/5.0\" ";
+    if (!api_key.empty()) {
+        command += "-H \"x-api-key: " + api_key + "\" ";
     }
-    const std::string command =
-        "powershell -NoProfile -Command \"(Invoke-WebRequest -UseBasicParsing '" + ps_url + "').Content\"";
+    command += "\"" + url + "\"";
     const std::string response = run_command(command);
 #else
-    const std::string command_primary =
-        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'user-agent: Mozilla/5.0' '" +
-        shell_escape_single_quote(url_primary) + "'";
-    const std::string command_fallback =
-        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'user-agent: Mozilla/5.0' '" +
-        shell_escape_single_quote(url_fallback) + "'";
-
-    std::string response = run_command(command_primary);
-    if (parse_nanotons_response(response) <= 0.0) {
-        response = run_command(command_fallback);
-    }
+    const std::string command =
+        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'origin: https://tonscan.org' "
+        "-H 'referer: https://tonscan.org/' -H 'user-agent: Mozilla/5.0' " +
+        (api_key.empty() ? std::string() : ("-H 'x-api-key: " + shell_escape_single_quote(api_key) + "' ")) + "'" +
+        shell_escape_single_quote(url) + "'";
+    const std::string response = run_command(command);
 #endif
 
     const double nanotons = parse_nanotons_response(response);
