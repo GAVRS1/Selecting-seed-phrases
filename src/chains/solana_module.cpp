@@ -9,6 +9,7 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #define popen _popen
@@ -93,33 +94,7 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
     const std::string token_accounts_payload =
         "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getTokenAccountsByOwner\",\"params\":[\"" + address +
         "\",{\"programId\":\"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"},{\"encoding\":\"jsonParsed\"}]}";
-#ifdef _WIN32
-    std::string ps_balance_payload = balance_payload;
-    for (std::size_t pos = 0; (pos = ps_balance_payload.find('\'', pos)) != std::string::npos; pos += 2) {
-        ps_balance_payload.replace(pos, 1, "''");
-    }
-    std::string ps_token_accounts_payload = token_accounts_payload;
-    for (std::size_t pos = 0; (pos = ps_token_accounts_payload.find('\'', pos)) != std::string::npos; pos += 2) {
-        ps_token_accounts_payload.replace(pos, 1, "''");
-    }
-    const std::string balance_command =
-        "powershell -NoProfile -Command \"$b='" + ps_balance_payload +
-        "'; (Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'https://api.mainnet-beta.solana.com' "
-        "-ContentType 'application/json' -Body $b).Content\"";
-    const std::string token_accounts_command =
-        "powershell -NoProfile -Command \"$b='" + ps_token_accounts_payload +
-        "'; (Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'https://api.mainnet-beta.solana.com' "
-        "-ContentType 'application/json' -Body $b).Content\"";
-#else
-    const std::string balance_command =
-        "curl -fsSL --max-time 10 -H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
-        shell_escape_single_quote(balance_payload) + "' 'https://api.mainnet-beta.solana.com'";
-    const std::string token_accounts_command =
-        "curl -fsSL --max-time 10 -H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
-        shell_escape_single_quote(token_accounts_payload) + "' 'https://api.mainnet-beta.solana.com'";
-#endif
-
-    const std::string balance_response = run_command(balance_command);
+    const std::string balance_response = query_rpc_best_effort(balance_payload);
     std::smatch m;
     if (std::regex_search(balance_response, m, std::regex(R"("value"\s*:\s*([0-9]+))")) && !m[1].str().empty()) {
         const std::string lamports_text = m[1].str();
