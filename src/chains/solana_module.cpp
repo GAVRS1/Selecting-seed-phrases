@@ -76,47 +76,6 @@ bool has_positive_token_amount(const std::string& token_accounts_response) {
     }
     return false;
 }
-
-std::vector<std::string> rpc_urls() {
-    return {
-        "https://api.mainnet-beta.solana.com",
-        "https://solana.public-rpc.com",
-    };
-}
-
-std::string build_rpc_command(const std::string& payload, const std::string& rpc_url) {
-#ifdef _WIN32
-    std::string ps_payload = payload;
-    for (std::size_t pos = 0; (pos = ps_payload.find('\'', pos)) != std::string::npos; pos += 2) {
-        ps_payload.replace(pos, 1, "''");
-    }
-    std::string ps_rpc_url = rpc_url;
-    for (std::size_t pos = 0; (pos = ps_rpc_url.find('\'', pos)) != std::string::npos; pos += 2) {
-        ps_rpc_url.replace(pos, 1, "''");
-    }
-    return "powershell -NoProfile -Command \"$b='" + ps_payload + "'; "
-           "(Invoke-WebRequest -UseBasicParsing -Method Post -Uri '" + ps_rpc_url +
-           "' -ContentType 'application/json' -Body $b).Content\"";
-#else
-    return "curl -fsSL --retry 2 --retry-delay 1 --max-time 10 "
-           "-H 'content-type: application/json' -H 'user-agent: Mozilla/5.0' -d '" +
-        shell_escape_single_quote(payload) + "' '" + shell_escape_single_quote(rpc_url) + "'";
-#endif
-}
-
-std::string query_rpc_best_effort(const std::string& payload) {
-    std::string last_response;
-    for (const auto& url : rpc_urls()) {
-        const std::string response = run_command(build_rpc_command(payload, url));
-        if (response.find("\"error\"") == std::string::npos && response.find("\"result\"") != std::string::npos) {
-            return response;
-        }
-        if (!response.empty()) {
-            last_response = response;
-        }
-    }
-    return last_response;
-}
 } // namespace
 
 std::string SolanaModule::name() const { return "sol"; }
@@ -147,7 +106,7 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
         }
     }
 
-    const std::string token_accounts_response = query_rpc_best_effort(token_accounts_payload);
+    const std::string token_accounts_response = run_command(token_accounts_command);
     if (has_positive_token_amount(token_accounts_response)) {
         return 1e-9;
     }
