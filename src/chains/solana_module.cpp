@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -56,6 +57,23 @@ std::string run_command(const std::string& command) {
     }
     pclose(pipe);
     return output;
+}
+
+bool has_positive_token_amount(const std::string& token_accounts_response) {
+    const std::regex amount_regex(R"rgx("amount"\s*:\s*"([0-9]+)")rgx");
+    for (auto it = std::sregex_iterator(token_accounts_response.begin(), token_accounts_response.end(), amount_regex);
+         it != std::sregex_iterator();
+         ++it) {
+        const std::string amount_text = (*it)[1].str();
+        if (!is_plain_unsigned_integer(amount_text)) {
+            continue;
+        }
+        const double amount = std::strtod(amount_text.c_str(), nullptr);
+        if (amount > 0.0) {
+            return true;
+        }
+    }
+    return false;
 }
 } // namespace
 
@@ -114,7 +132,7 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
     }
 
     const std::string token_accounts_response = run_command(token_accounts_command);
-    if (std::regex_search(token_accounts_response, m, std::regex(R"("value"\s*:\s*\[\s*\{)"))) {
+    if (has_positive_token_amount(token_accounts_response)) {
         return 1e-9;
     }
 
