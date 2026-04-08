@@ -4,6 +4,7 @@
 #include "chains/bitcoin_module.hpp"
 #include "chains/ethereum_module.hpp"
 #include "chains/solana_module.hpp"
+#include "chains/ton_module.hpp"
 #include "cli/args.hpp"
 #include "engine/matcher.hpp"
 #include "engine/pipeline.hpp"
@@ -61,6 +62,9 @@ int main(int argc, char** argv) {
         }
         if (chain_enabled(cfg, "sol")) {
             pipeline.register_chain(std::make_unique<chains::SolanaModule>());
+        }
+        if (chain_enabled(cfg, "ton")) {
+            pipeline.register_chain(std::make_unique<chains::TonModule>());
         }
 
         pipeline.run();

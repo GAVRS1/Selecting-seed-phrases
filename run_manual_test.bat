@@ -74,6 +74,7 @@ if not exist data\manual_wallets.txt (
   >>data\manual_wallets.txt echo # btc,1BoatSLRHtKNngkdXEeobR76b53LETtpyT
   >>data\manual_wallets.txt echo # eth,0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe
   >>data\manual_wallets.txt echo # sol,Vote111111111111111111111111111111111111111
+  >>data\manual_wallets.txt echo # ton,0:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   echo Created data\manual_wallets.txt example file.
 )
 
@@ -91,7 +92,7 @@ if not exist "%RECOVERY_EXE%" (
   goto :error
 )
 
-"%RECOVERY_EXE%" --manual-wallets "data\manual_wallets.txt" --chains "btc,eth,sol" --recovered-wallets "recovered_wallets.txt"
+"%RECOVERY_EXE%" --manual-wallets "data\manual_wallets.txt" --chains "btc,eth,sol,ton" --recovered-wallets "recovered_wallets.txt"
 if errorlevel 1 goto :error
 
 echo.

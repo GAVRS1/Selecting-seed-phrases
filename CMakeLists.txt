@@ -50,6 +50,7 @@ add_library(recovery_core
     src/chains/bitcoin_module.cpp
     src/chains/ethereum_module.cpp
     src/chains/solana_module.cpp
+    src/chains/ton_module.cpp
     src/chains/common.cpp
     src/engine/matcher.cpp
     src/engine/pipeline.cpp

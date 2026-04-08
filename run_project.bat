@@ -87,10 +87,11 @@ if not exist "%RECOVERY_EXE%" (
   goto :error
 )
 
-echo Opening separate consoles for BTC / ETH / SOL...
+echo Opening separate consoles for BTC / ETH / SOL / TON...
 start "BTC recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "btc" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-btc "m/84'/0'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
 start "ETH recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "eth" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-eth "m/44'/60'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
 start "SOL recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "sol" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-sol "m/44'/501'/{i}'/0'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
+start "TON recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "ton" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-ton "m/44'/607'/0'/{i}'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
 
 echo.
 echo Consoles started.

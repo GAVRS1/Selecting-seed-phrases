@@ -39,6 +39,8 @@ int main() {
             "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
             "--allow-words",
             "bird,body,bridge",
+            "--paths-ton",
+            "m/44'/607'/0'/{i}'",
         };
         std::vector<char*> argv;
         argv.reserve(storage.size());
@@ -49,6 +51,8 @@ int main() {
         const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
         assert(cfg.template_words.size() == 12);
         assert(cfg.allow_words.size() == 3);
+        assert(cfg.paths_ton.size() == 1);
+        assert(cfg.paths_ton[0] == "m/44'/607'/0'/{i}'");
     }
 
     std::cout << "test_cli_args passed\n";
