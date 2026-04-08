@@ -99,7 +99,7 @@ std::string trim_copy(const std::string& value) {
 std::string format_balance(double value) {
     std::ostringstream oss;
     oss.setf(std::ios::fixed);
-    oss.precision(8);
+    oss.precision(9);
     oss << value;
     std::string formatted = oss.str();
     auto dot_pos = formatted.find('.');
