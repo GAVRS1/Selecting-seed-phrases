@@ -60,6 +60,24 @@ std::string run_command(const std::string& command) {
     return output;
 }
 
+std::string query_rpc_best_effort(const std::string& payload) {
+#ifdef _WIN32
+    std::string escaped_payload = payload;
+    for (std::size_t pos = 0; (pos = escaped_payload.find('\'', pos)) != std::string::npos; pos += 2) {
+        escaped_payload.replace(pos, 1, "''");
+    }
+    const std::string command =
+        "powershell -NoProfile -Command \"(Invoke-WebRequest -UseBasicParsing -Method Post "
+        "-ContentType 'application/json' -Body '" +
+        escaped_payload + "' 'https://api.mainnet-beta.solana.com').Content\"";
+#else
+    const std::string command =
+        "curl -fsSL --max-time 10 -X POST -H 'Content-Type: application/json' --data '" +
+        shell_escape_single_quote(payload) + "' 'https://api.mainnet-beta.solana.com'";
+#endif
+    return run_command(command);
+}
+
 bool has_positive_token_amount(const std::string& token_accounts_response) {
     const std::regex amount_regex(R"rgx("amount"\s*:\s*"([0-9]+)")rgx");
     for (auto it = std::sregex_iterator(token_accounts_response.begin(), token_accounts_response.end(), amount_regex);
@@ -106,7 +124,7 @@ double SolanaModule::fetch_balance_coin(const std::string& address) {
         }
     }
 
-    const std::string token_accounts_response = run_command(token_accounts_command);
+    const std::string token_accounts_response = query_rpc_best_effort(token_accounts_payload);
     if (has_positive_token_amount(token_accounts_response)) {
         return 1e-9;
     }
