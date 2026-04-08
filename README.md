@@ -144,3 +144,148 @@ Lines starting with `#` are ignored.
 - запускает `build\recovery_tool.exe` с базовыми параметрами.
 
 Для ручной проверки адресов из файла используйте `run_manual_test.bat`.
+
+## Подробная установка на Windows (Visual Studio уже установлена)
+
+Ниже — пошаговая инструкция для случая, когда на ПК уже есть Visual Studio, но нет `vcpkg`/OpenSSL.
+
+### 0) Что должно быть установлено
+
+1. **Visual Studio 2022** с рабочей нагрузкой **Desktop development with C++**.
+2. **Git for Windows**.
+3. **CMake** (если не уверены — поставьте отдельно с https://cmake.org/download/).
+
+Проверка в **PowerShell**:
+
+```powershell
+git --version
+cmake --version
+```
+
+Если команды не находятся — установите соответствующий инструмент и перезапустите терминал.
+
+### 1) Откройте правильный терминал от Visual Studio
+
+Проще всего использовать:
+
+- **x64 Native Tools Command Prompt for VS 2022**  
+или
+- обычный PowerShell, но запущенный через меню Visual Studio Developer PowerShell.
+
+Это важно, чтобы CMake видел компилятор MSVC.
+
+### 2) Установите vcpkg (один раз)
+
+В PowerShell выполните:
+
+```powershell
+git clone https://github.com/microsoft/vcpkg $env:USERPROFILE\vcpkg
+& $env:USERPROFILE\vcpkg\bootstrap-vcpkg.bat
+setx VCPKG_ROOT "$env:USERPROFILE\vcpkg"
+```
+
+После `setx` **закройте терминал и откройте новый**, иначе переменная `VCPKG_ROOT` может не подхватиться.
+
+Проверка:
+
+```powershell
+$env:VCPKG_ROOT
+Test-Path "$env:VCPKG_ROOT\vcpkg.exe"
+```
+
+### 3) Установите OpenSSL через vcpkg (важно: Manifest Mode vs Classic Mode)
+
+Если вы видите ошибку:
+
+`Could not locate a manifest (vcpkg.json) ... This vcpkg distribution does not have a classic mode instance`
+
+это значит, что у вас **manifest-only** сборка vcpkg (часто так в новых установках).
+
+В этом репозитории уже есть `vcpkg.json`.  
+Если проект ещё не скачан, сначала выполните шаг 4, затем вернитесь сюда.
+
+Далее выполните:
+
+```powershell
+cd <ПАПКА_РЕПОЗИТОРИЯ>
+& $env:VCPKG_ROOT\vcpkg install --triplet x64-windows
+```
+
+Проверка:
+
+```powershell
+& $env:VCPKG_ROOT\vcpkg list | Select-String openssl
+```
+
+> Если у вас классическая сборка vcpkg, команда `vcpkg install openssl:x64-windows` тоже может работать.  
+> Но для совместимости лучше использовать manifest-подход из примера выше.
+
+### 4) Склонируйте проект (если ещё не скачали)
+
+```powershell
+git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ>
+cd <ПАПКА_РЕПОЗИТОРИЯ>
+```
+
+### 5) Сконфигурируйте CMake с toolchain vcpkg
+
+```powershell
+cmake -S . -B build `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+```
+
+Если используете генератор Visual Studio (multi-config), это нормально.
+
+### 6) Соберите проект
+
+```powershell
+cmake --build build --config Release
+```
+
+После успешной сборки exe обычно находится по пути:
+
+- `build\Release\recovery_tool.exe` (для Visual Studio generator), или
+- `build\recovery_tool.exe` (для single-config generator).
+
+### 7) Запустите быстрый сценарий (опционально)
+
+Можно использовать готовый bat-скрипт:
+
+```powershell
+.\run_project.bat
+```
+
+Или запускать exe вручную с параметрами из раздела **Run (example)** выше.
+
+### 8) Частые проблемы и решения
+
+1. **`Could not locate a manifest (vcpkg.json)` / `does not have a classic mode instance`**  
+   Вы запускаете команду классического режима в manifest-only vcpkg.  
+   Решение:
+   - перейдите в папку проекта, где лежит `vcpkg.json`,
+   - выполните `vcpkg install --triplet x64-windows`.
+
+2. **`Could NOT find OpenSSL`**  
+   Убедитесь, что:
+   - зависимости установлены командой `vcpkg install --triplet x64-windows`,
+   - вы передали `-DCMAKE_TOOLCHAIN_FILE=...vcpkg.cmake`,
+   - используете тот же triplet (`x64-windows`).
+
+3. **CMake не видит компилятор (`cl.exe`)**  
+   Откройте именно Developer/Native Tools терминал от Visual Studio.
+
+4. **Старая кеш-конфигурация CMake**  
+   Очистите сборку и настройте заново:
+
+   ```powershell
+   Remove-Item -Recurse -Force build
+   ```
+
+5. **Переменная `VCPKG_ROOT` пустая**  
+   После `setx` нужен новый терминал.  
+   Временный вариант на текущую сессию:
+
+   ```powershell
+   $env:VCPKG_ROOT="$env:USERPROFILE\vcpkg"
+   ```
