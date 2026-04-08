@@ -76,21 +76,20 @@ std::vector<std::string> TonModule::derive_addresses(
 double TonModule::fetch_balance_coin(const std::string& address) {
     const std::string url =
         "https://toncenter.com/api/v3/accountStates?address=" + address + "&include_boc=false";
-    const std::string api_key = toncenter_api_key();
 #ifdef _WIN32
-    std::string command =
-        "curl.exe -fsSL --max-time 10 -H \"accept: application/json\" -H \"origin: https://tonscan.org\" "
-        "-H \"referer: https://tonscan.org/\" -H \"user-agent: Mozilla/5.0\" ";
-    if (!api_key.empty()) {
-        command += "-H \"x-api-key: " + api_key + "\" ";
+    std::string ps_url = url;
+    for (std::size_t pos = 0; (pos = ps_url.find('\'', pos)) != std::string::npos; pos += 2) {
+        ps_url.replace(pos, 1, "''");
     }
-    command += "\"" + url + "\"";
+    const std::string command =
+        "powershell -NoProfile -Command \"(Invoke-WebRequest -UseBasicParsing -Headers "
+        "@{'accept'='application/json';'x-api-key'='fc9911887faea841d9fd6d98a5fea74bc74ed300abe2759c161c9d04319b0941'} '"
+        + ps_url + "').Content\"";
     const std::string response = run_command(command);
 #else
     const std::string command =
-        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'origin: https://tonscan.org' "
-        "-H 'referer: https://tonscan.org/' -H 'user-agent: Mozilla/5.0' " +
-        (api_key.empty() ? std::string() : ("-H 'x-api-key: " + shell_escape_single_quote(api_key) + "' ")) + "'" +
+        "curl -fsSL --max-time 10 -H 'accept: application/json' -H 'user-agent: Mozilla/5.0' -H "
+        "'x-api-key: fc9911887faea841d9fd6d98a5fea74bc74ed300abe2759c161c9d04319b0941' '" +
         shell_escape_single_quote(url) + "'";
     const std::string response = run_command(command);
 #endif
