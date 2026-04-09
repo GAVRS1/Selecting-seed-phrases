@@ -153,6 +153,35 @@ Optional: custom env file path.
 
 If you need another table name, set `RECOVERY_POSTGRES_TABLE` in `.env` or use `--postgres-table`.
 
+
+## Скрипт проверки балансов из PostgreSQL
+
+Добавлен отдельный Python-скрипт: `scripts/check_wallet_balances.py`.
+
+Что делает:
+
+1. Берёт кошельки из таблицы PostgreSQL (`id, blockchain, address, mnemonic`).
+2. Проверяет баланс по сети (`btc`, `eth`, `sol`, `ton`).
+3. Если баланс больше нуля — добавляет строку в `recovered_wallets.txt` в формате:
+   `blockchain/address/mnemonic`.
+4. После успешной проверки удаляет запись из БД **в любом случае** (и при нулевом, и при ненулевом балансе).
+5. Если баланс не удалось проверить из-за ошибки API/сети, запись не удаляется (чтобы не потерять данные).
+
+Запуск:
+
+```bash
+python3 scripts/check_wallet_balances.py \
+  --env-file .env \
+  --output recovered_wallets.txt
+```
+
+Опции:
+
+- `--postgres-conn` — строка подключения PostgreSQL (иначе берётся `RECOVERY_POSTGRES_CONN` из `.env`/env).
+- `--postgres-table` — имя таблицы (по умолчанию `recovered_wallets`).
+- `--delay-seconds` — задержка между запросами к API (полезно при rate-limit).
+- `--output` — путь к файлу для найденных непустых кошельков.
+
 ## Manual wallet check mode
 
 Use this mode when you want to verify parser behavior on known addresses from a text file.
