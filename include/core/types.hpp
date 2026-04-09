@@ -25,6 +25,7 @@ struct AppConfig {
     std::string recovered_wallets_path{"recovered_wallets.txt"};
     std::string postgres_conninfo;
     std::string postgres_table{"recovered_wallets"};
+    std::string env_file_path{".env"};
     std::string seen_mnemonics_path{"seen_mnemonics.txt"};
     std::string manual_wallets_path;
     std::string bip39_passphrase;

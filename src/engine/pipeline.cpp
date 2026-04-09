@@ -357,18 +357,6 @@ bool Pipeline::wallet_record_exists(const std::string& chain_name,
         if (!is_valid_sql_identifier(config_.postgres_table)) {
             throw std::runtime_error("Invalid PostgreSQL table name: " + config_.postgres_table);
         }
-        std::call_once(postgres_init_once_, [&]() {
-            const std::string ddl =
-                "CREATE TABLE IF NOT EXISTS " + config_.postgres_table + " ("
-                "id BIGSERIAL PRIMARY KEY, "
-                "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
-                "blockchain TEXT NOT NULL, "
-                "address TEXT NOT NULL, "
-                "mnemonic TEXT NOT NULL, "
-                "UNIQUE(blockchain, address, mnemonic)"
-                ");";
-            exec_psql_command(config_.postgres_conninfo, ddl);
-        });
         return false;
     }
 
@@ -398,19 +386,6 @@ void Pipeline::persist_wallet_record(const std::string& chain_name,
         if (!is_valid_sql_identifier(config_.postgres_table)) {
             throw std::runtime_error("Invalid PostgreSQL table name: " + config_.postgres_table);
         }
-        std::call_once(postgres_init_once_, [&]() {
-            const std::string ddl =
-                "CREATE TABLE IF NOT EXISTS " + config_.postgres_table + " ("
-                "id BIGSERIAL PRIMARY KEY, "
-                "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
-                "blockchain TEXT NOT NULL, "
-                "address TEXT NOT NULL, "
-                "mnemonic TEXT NOT NULL, "
-                "UNIQUE(blockchain, address, mnemonic)"
-                ");";
-            exec_psql_command(config_.postgres_conninfo, ddl);
-        });
-
         const std::string insert =
             "INSERT INTO " + config_.postgres_table +
             " (blockchain, address, mnemonic) VALUES ('" +
