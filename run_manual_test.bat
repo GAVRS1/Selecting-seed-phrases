@@ -6,6 +6,7 @@ cd /d "%~dp0"
 
 set "CMAKE_EXTRA_ARGS="
 set "VCPKG_EFFECTIVE_ROOT="
+set "PYTHON_BIN=python"
 
 if exist "vcpkg.json" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Get-Content -Raw -Path '.\vcpkg.json' | ConvertFrom-Json | Out-Null; exit 0 } catch { exit 1 }"
@@ -38,6 +39,11 @@ if defined OPENSSL_ROOT_DIR (
   set "CMAKE_EXTRA_ARGS=%CMAKE_EXTRA_ARGS% -DOPENSSL_ROOT_DIR=%OPENSSL_ROOT_DIR%"
 )
 
+where py >nul 2>&1
+if not errorlevel 1 (
+  set "PYTHON_BIN=py -3"
+)
+
 echo [1/3] Configuring CMake...
 cmake -S . -B build %CMAKE_EXTRA_ARGS%
 if errorlevel 1 (
@@ -60,7 +66,7 @@ echo [2/3] Building project...
 cmake --build build --config Release
 if errorlevel 1 goto :error
 
-echo [3/3] Running manual wallet check...
+echo [3/3] Running manual wallet check via Python...
 if not exist recovered_wallets.txt (
   type nul > recovered_wallets.txt
 )
@@ -78,21 +84,7 @@ if not exist data\manual_wallets.txt (
   echo Created data\manual_wallets.txt example file.
 )
 
-set "RECOVERY_EXE=build\recovery_tool.exe"
-if not exist "%RECOVERY_EXE%" (
-  if exist "build\Release\recovery_tool.exe" (
-    set "RECOVERY_EXE=build\Release\recovery_tool.exe"
-  ) else if exist "build\Debug\recovery_tool.exe" (
-    set "RECOVERY_EXE=build\Debug\recovery_tool.exe"
-  )
-)
-
-if not exist "%RECOVERY_EXE%" (
-  echo Could not find recovery_tool.exe in build\ ^(single-config^) or build\Release\build\Debug ^(multi-config^).
-  goto :error
-)
-
-"%RECOVERY_EXE%" --manual-wallets "data\manual_wallets.txt" --chains "btc,eth,sol,ton" --recovered-wallets "recovered_wallets.txt"
+%PYTHON_BIN% scripts\check_wallet_balances.py --manual-wallets "data\manual_wallets.txt" --output "recovered_wallets.txt" --delay-seconds 0.2
 if errorlevel 1 goto :error
 
 echo.
