@@ -4,8 +4,9 @@
 Workflow:
 1. Read wallet records from PostgreSQL table (`blockchain`, `address`, `mnemonic`).
 2. Query on-chain balances by blockchain.
-3. If balance > 0, append `blockchain/address/mnemonic` to recovered_wallets.txt.
-4. Delete processed wallet rows from PostgreSQL in both zero and non-zero balance cases.
+3. Print `blockchain/address/balance/mnemonic` to console for each successfully checked wallet.
+4. If balance > 0, append `blockchain/address/mnemonic` to recovered_wallets.txt.
+5. Delete processed wallet rows from PostgreSQL in both zero and non-zero balance cases.
 
 Rows whose balances cannot be checked (API/network error) are not deleted.
 """
@@ -202,10 +203,13 @@ def process_wallets(conn: str, table: str, output_path: str, delay_seconds: floa
             print(f"[WARN] Skip id={wallet.row_id} {wallet.blockchain}:{wallet.address} due to: {exc}")
             continue
 
-        print(f"id={wallet.row_id} chain={wallet.blockchain} address={wallet.address} balance={balance}")
+        print(f"{wallet.blockchain}/{wallet.address}/{balance}/{wallet.mnemonic}")
         if balance > 0:
             append_recovered(output_path, wallet)
             recovered_count += 1
+            print(f"[WRITE] id={wallet.row_id} -> {output_path}")
+        else:
+            print(f"[DELETE] id={wallet.row_id} zero balance")
 
         deleted_ids.append(wallet.row_id)
         if delay_seconds > 0:
