@@ -23,7 +23,7 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - Duplicate wallet protection when creating wallet records from seed phrases.
 - Manual wallet import mode from a TXT file (`--manual-wallets`) for parser verification.
 - Console output without balance values: `wallet || address || seed`.
-- Optional persistence of generated wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`); TXT storage is not used.
+- Optional persistence of generated wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`).
 - Basic CLI parser and executable entrypoint.
 - Minimal tests (`test_bip39`, `test_derivation`, `test_pipeline`).
 
@@ -117,7 +117,7 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - `--shuffle-seed <number>` enables shuffle with a fixed seed for reproducible runs.
 > - `--allow-words "abandon,ability,about"` limits wildcard substitutions without editing the original BIP-39 wordlist.
 > - You can run only manual wallet imports without seed generation by using `--manual-wallets`.
-> - Wallet records are written only to PostgreSQL when `--postgres-conn` is set.
+> - If `--postgres-conn` is set, wallet records are written to PostgreSQL instead of TXT.
 > - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
 
 ## Manual wallet check mode
