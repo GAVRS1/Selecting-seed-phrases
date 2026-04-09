@@ -39,7 +39,6 @@ private:
     std::mutex console_mutex_;
     mutable std::mutex postgres_mutex_;
     mutable std::mutex wallet_cache_mutex_;
-    mutable std::once_flag postgres_init_once_;
     std::atomic<bool> console_header_printed_{false};
     mutable std::unordered_set<std::string> known_wallet_records_;
 

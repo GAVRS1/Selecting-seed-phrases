@@ -1,6 +1,9 @@
 #include "cli/args.hpp"
 
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -74,6 +77,33 @@ int main() {
         const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
         assert(cfg.postgres_conninfo == "postgresql://postgres:postgres@localhost:5432/recovery");
         assert(cfg.postgres_table == "wallet_hits");
+    }
+
+    {
+        const std::string env_file = "test_cli_args.env";
+        {
+            std::ofstream out(env_file);
+            out << "RECOVERY_POSTGRES_CONN=postgresql://env:env@localhost:5432/envdb\n";
+            out << "RECOVERY_POSTGRES_TABLE=env_wallet_hits\n";
+        }
+
+        std::vector<std::string> storage{
+            "recovery_tool",
+            "--template",
+            "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
+            "--env-file",
+            env_file,
+        };
+        std::vector<char*> argv;
+        argv.reserve(storage.size());
+        for (auto& item : storage) {
+            argv.push_back(item.data());
+        }
+
+        const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
+        assert(cfg.postgres_conninfo == "postgresql://env:env@localhost:5432/envdb");
+        assert(cfg.postgres_table == "env_wallet_hits");
+        std::remove(env_file.c_str());
     }
 
     std::cout << "test_cli_args passed\n";

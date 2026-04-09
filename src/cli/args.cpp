@@ -2,9 +2,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <fstream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 namespace cli {
 
@@ -44,10 +48,62 @@ std::vector<std::string> split_words_csv_or_space(const std::string& input) {
     }
     return out;
 }
+
+std::string strip_optional_quotes(const std::string& value) {
+    if (value.size() >= 2) {
+        const char first = value.front();
+        const char last = value.back();
+        if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+            return value.substr(1, value.size() - 2);
+        }
+    }
+    return value;
+}
+
+std::unordered_map<std::string, std::string> parse_dotenv_file(const std::string& path) {
+    std::unordered_map<std::string, std::string> values;
+    std::ifstream in(path);
+    if (!in) {
+        return values;
+    }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        const std::string clean = trim_copy(line);
+        if (clean.empty() || clean[0] == '#') {
+            continue;
+        }
+
+        const auto pos = clean.find('=');
+        if (pos == std::string::npos || pos == 0) {
+            continue;
+        }
+
+        const std::string key = trim_copy(clean.substr(0, pos));
+        const std::string raw_value = trim_copy(clean.substr(pos + 1));
+        if (key.empty()) {
+            continue;
+        }
+
+        values[key] = strip_optional_quotes(raw_value);
+    }
+
+    return values;
+}
+
+std::optional<std::string> getenv_copy(const char* name) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || *value == '\0') {
+        return std::nullopt;
+    }
+    return std::string(value);
+}
 } // namespace
 
 core::AppConfig parse_args(int argc, char** argv) {
     core::AppConfig cfg;
+    bool postgres_conn_set_by_cli = false;
+    bool postgres_table_set_by_cli = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -69,8 +125,12 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.recovered_wallets_path = argv[++i];
         } else if (arg == "--postgres-conn" && i + 1 < argc) {
             cfg.postgres_conninfo = argv[++i];
+            postgres_conn_set_by_cli = true;
         } else if (arg == "--postgres-table" && i + 1 < argc) {
             cfg.postgres_table = argv[++i];
+            postgres_table_set_by_cli = true;
+        } else if (arg == "--env-file" && i + 1 < argc) {
+            cfg.env_file_path = argv[++i];
         } else if (arg == "--seen-mnemonics" && i + 1 < argc) {
             cfg.seen_mnemonics_path = argv[++i];
         } else if (arg == "--manual-wallets" && i + 1 < argc) {
@@ -92,6 +152,24 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.max_candidates = std::stoull(argv[++i]);
         } else if (arg == "--threads" && i + 1 < argc) {
             cfg.threads = static_cast<std::uint32_t>(std::stoul(argv[++i]));
+        }
+    }
+
+    const auto dotenv_values = parse_dotenv_file(cfg.env_file_path);
+    if (!postgres_conn_set_by_cli) {
+        const auto dotenv_conn_it = dotenv_values.find("RECOVERY_POSTGRES_CONN");
+        if (dotenv_conn_it != dotenv_values.end() && !dotenv_conn_it->second.empty()) {
+            cfg.postgres_conninfo = dotenv_conn_it->second;
+        } else if (const auto env_conn = getenv_copy("RECOVERY_POSTGRES_CONN"); env_conn.has_value()) {
+            cfg.postgres_conninfo = *env_conn;
+        }
+    }
+    if (!postgres_table_set_by_cli) {
+        const auto dotenv_table_it = dotenv_values.find("RECOVERY_POSTGRES_TABLE");
+        if (dotenv_table_it != dotenv_values.end() && !dotenv_table_it->second.empty()) {
+            cfg.postgres_table = dotenv_table_it->second;
+        } else if (const auto env_table = getenv_copy("RECOVERY_POSTGRES_TABLE"); env_table.has_value()) {
+            cfg.postgres_table = *env_table;
         }
     }
 

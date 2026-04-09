@@ -24,6 +24,8 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - Manual wallet import mode from a TXT file (`--manual-wallets`) for parser verification.
 - Console output without balance values: `wallet || address || seed`.
 - Optional persistence of generated wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`).
+- `.env` support for PostgreSQL settings (`RECOVERY_POSTGRES_CONN`, `RECOVERY_POSTGRES_TABLE`).
+- SQL migrations in `migrations/` with a helper script `scripts/db_migrate.sh`.
 - Basic CLI parser and executable entrypoint.
 - Minimal tests (`test_bip39`, `test_derivation`, `test_pipeline`).
 
@@ -118,7 +120,38 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - `--allow-words "abandon,ability,about"` limits wildcard substitutions without editing the original BIP-39 wordlist.
 > - You can run only manual wallet imports without seed generation by using `--manual-wallets`.
 > - If `--postgres-conn` is set, wallet records are written to PostgreSQL instead of TXT.
+> - If `--postgres-conn` is not passed, the app reads `RECOVERY_POSTGRES_CONN` and `RECOVERY_POSTGRES_TABLE` from `--env-file` (default: `.env`) and then from process environment variables.
 > - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
+
+## PostgreSQL: `.env` + migrations
+
+1. Copy `.env.example` to `.env` and edit values:
+
+```bash
+cp .env.example .env
+```
+
+2. Apply migrations (creates `schema_migrations` and runs all SQL files from `migrations/`):
+
+```bash
+./scripts/db_migrate.sh
+```
+
+Optional: custom env file path.
+
+```bash
+./scripts/db_migrate.sh .env.prod
+```
+
+3. Run the tool. You can either pass PostgreSQL values explicitly or rely on `.env`:
+
+```bash
+./build/recovery_tool \
+  --env-file .env \
+  --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability"
+```
+
+If you need another table name, set `RECOVERY_POSTGRES_TABLE` in `.env` or use `--postgres-table`.
 
 ## Manual wallet check mode
 
