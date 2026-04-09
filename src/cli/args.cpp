@@ -67,6 +67,10 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.target_addresses_path = argv[++i];
         } else if (arg == "--recovered-wallets" && i + 1 < argc) {
             cfg.recovered_wallets_path = argv[++i];
+        } else if (arg == "--postgres-conn" && i + 1 < argc) {
+            cfg.postgres_conninfo = argv[++i];
+        } else if (arg == "--postgres-table" && i + 1 < argc) {
+            cfg.postgres_table = argv[++i];
         } else if (arg == "--seen-mnemonics" && i + 1 < argc) {
             cfg.seen_mnemonics_path = argv[++i];
         } else if (arg == "--manual-wallets" && i + 1 < argc) {

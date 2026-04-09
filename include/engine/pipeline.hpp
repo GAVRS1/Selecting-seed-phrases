@@ -37,6 +37,8 @@ private:
     std::unordered_set<std::string> recovered_chains_;
     std::mutex recovered_mutex_;
     std::mutex console_mutex_;
+    mutable std::mutex postgres_mutex_;
+    mutable std::once_flag postgres_init_once_;
     std::atomic<bool> console_header_printed_{false};
 
     bool is_chain_recovered(const std::string& chain_name);
