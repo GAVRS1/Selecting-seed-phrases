@@ -23,6 +23,8 @@ struct AppConfig {
     std::vector<std::string> paths_ton;
     std::string target_addresses_path;
     std::string recovered_wallets_path{"recovered_wallets.txt"};
+    std::string postgres_conninfo;
+    std::string postgres_table{"recovered_wallets"};
     std::string seen_mnemonics_path{"seen_mnemonics.txt"};
     std::string manual_wallets_path;
     std::string bip39_passphrase;

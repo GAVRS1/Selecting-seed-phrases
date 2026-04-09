@@ -23,6 +23,7 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - Manual wallet balance-check mode from a TXT file (`--manual-wallets`) for parser/scanner verification.
 - Console output in `coin` units (not USD), e.g. `0 coin`, `0.15 coin`.
 - Automatic persistence of recovered wallets (`chain`, `address`, `balance_coin`, `mnemonic`) to a TXT file.
+- Optional persistence of recovered wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`).
 - Basic CLI parser and executable entrypoint.
 - Minimal tests (`test_bip39`, `test_derivation`, `test_pipeline`).
 
@@ -96,6 +97,8 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 ./build/recovery_tool \
   --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability" \
   --recovered-wallets ./recovered_wallets.txt \
+  --postgres-conn "postgresql://postgres:postgres@127.0.0.1:5432/recovery" \
+  --postgres-table "recovered_wallets" \
   --bip39-passphrase "" \
   --shuffle-words \
   --paths-btc "m/84'/0'/0'/0/{i}" \
@@ -115,6 +118,7 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - `--allow-words "abandon,ability,about"` limits wildcard substitutions without editing the original BIP-39 wordlist.
 > - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
 > - You can run only manual balance checks without seed generation by using `--manual-wallets`.
+> - If `--postgres-conn` is set, recovered wallets are written to PostgreSQL instead of TXT.
 > - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
 
 ## Manual wallet check mode

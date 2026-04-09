@@ -55,6 +55,27 @@ int main() {
         assert(cfg.paths_ton[0] == "m/44'/607'/0'/{i}'");
     }
 
+    {
+        std::vector<std::string> storage{
+            "recovery_tool",
+            "--template",
+            "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
+            "--postgres-conn",
+            "postgresql://postgres:postgres@localhost:5432/recovery",
+            "--postgres-table",
+            "wallet_hits",
+        };
+        std::vector<char*> argv;
+        argv.reserve(storage.size());
+        for (auto& item : storage) {
+            argv.push_back(item.data());
+        }
+
+        const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
+        assert(cfg.postgres_conninfo == "postgresql://postgres:postgres@localhost:5432/recovery");
+        assert(cfg.postgres_table == "wallet_hits");
+    }
+
     std::cout << "test_cli_args passed\n";
     return 0;
 }
