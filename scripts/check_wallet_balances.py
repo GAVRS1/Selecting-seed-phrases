@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Check balances for wallets stored in PostgreSQL and prune processed rows.
+"""Check balances for wallets stored in PostgreSQL or manual TXT file.
 
 Workflow:
-1. Read wallet records from PostgreSQL table (`blockchain`, `address`, `mnemonic`).
+1. Read wallet records from PostgreSQL table (`blockchain`, `address`, `mnemonic`)
+   or from `manual_wallets.txt`.
 2. Query on-chain balances by blockchain.
 3. Print `blockchain/address/balance/mnemonic` to console for each successfully checked wallet.
 4. If balance > 0, append `blockchain/address/mnemonic` to recovered_wallets.txt.
-5. Delete processed wallet rows from PostgreSQL in both zero and non-zero balance cases.
+5. In PostgreSQL mode, delete processed wallet rows from DB in both zero and non-zero balance cases.
 
-Rows whose balances cannot be checked (API/network error) are not deleted.
+Rows whose balances cannot be checked (API/network error) are not deleted in PostgreSQL mode.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ PSQL_BIN = os.environ.get("PSQL_BIN", "psql")
 
 @dataclass(frozen=True)
 class WalletRow:
-    row_id: int
+    row_id: int | None
     blockchain: str
     address: str
     mnemonic: str
@@ -99,6 +100,31 @@ def fetch_rows(conn: str, table: str) -> list[WalletRow]:
             )
         )
     return rows
+
+
+def parse_manual_wallets(path: str) -> list[WalletRow]:
+    wallets: list[WalletRow] = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for line_no, raw_line in enumerate(handle, start=1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            normalized = line.replace(";", ",")
+            if "," in normalized:
+                parts = [p.strip() for p in normalized.split(",", 1)]
+            else:
+                parts = normalized.split(None, 1)
+
+            if len(parts) != 2:
+                raise ValueError(
+                    f"Invalid manual wallet format at {path}:{line_no}. "
+                    "Expected 'chain,address' (also supports ';' or single space)."
+                )
+
+            blockchain, address = parts[0].lower(), parts[1]
+            wallets.append(WalletRow(row_id=None, blockchain=blockchain, address=address, mnemonic=""))
+    return wallets
 
 
 def request_json(url: str, payload: dict | None = None) -> dict:
@@ -176,7 +202,10 @@ def fetch_balance(blockchain: str, address: str) -> Decimal:
 
 def append_recovered(path: str, wallet: WalletRow) -> None:
     with open(path, "a", encoding="utf-8") as handle:
-        handle.write(f"{wallet.blockchain}/{wallet.address}/{wallet.mnemonic}\n")
+        if wallet.mnemonic:
+            handle.write(f"{wallet.blockchain}/{wallet.address}/{wallet.mnemonic}\n")
+        else:
+            handle.write(f"{wallet.blockchain}/{wallet.address}\n")
 
 
 def delete_rows(conn: str, table: str, row_ids: Iterable[int]) -> int:
@@ -189,8 +218,15 @@ def delete_rows(conn: str, table: str, row_ids: Iterable[int]) -> int:
     return len(row_ids)
 
 
-def process_wallets(conn: str, table: str, output_path: str, delay_seconds: float) -> int:
-    wallets = fetch_rows(conn, table)
+def process_wallets(
+    wallets: list[WalletRow],
+    output_path: str,
+    delay_seconds: float,
+    *,
+    conn: str | None = None,
+    table: str | None = None,
+) -> int:
+    db_mode = conn is not None and table is not None
     print(f"Loaded wallets: {len(wallets)}")
 
     deleted_ids: list[int] = []
@@ -200,32 +236,51 @@ def process_wallets(conn: str, table: str, output_path: str, delay_seconds: floa
         try:
             balance = fetch_balance(wallet.blockchain, wallet.address)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
-            print(f"[WARN] Skip id={wallet.row_id} {wallet.blockchain}:{wallet.address} due to: {exc}")
+            wallet_ref = f"id={wallet.row_id} " if wallet.row_id is not None else ""
+            print(f"[WARN] Skip {wallet_ref}{wallet.blockchain}:{wallet.address} due to: {exc}")
             continue
 
         print(f"{wallet.blockchain}/{wallet.address}/{balance}/{wallet.mnemonic}")
         if balance > 0:
             append_recovered(output_path, wallet)
             recovered_count += 1
-            print(f"[WRITE] id={wallet.row_id} -> {output_path}")
+            wallet_ref = f"id={wallet.row_id} " if wallet.row_id is not None else ""
+            print(f"[WRITE] {wallet_ref}-> {output_path}")
         else:
-            print(f"[DELETE] id={wallet.row_id} zero balance")
+            if wallet.row_id is not None:
+                print(f"[DELETE] id={wallet.row_id} zero balance")
+            else:
+                print("[SKIP] zero balance")
 
-        deleted_ids.append(wallet.row_id)
+        if wallet.row_id is not None:
+            deleted_ids.append(wallet.row_id)
         if delay_seconds > 0:
             time.sleep(delay_seconds)
 
-    deleted_count = delete_rows(conn, table, deleted_ids)
+    deleted_count = 0
+    if db_mode:
+        deleted_count = delete_rows(conn, table, deleted_ids)
     print(f"Recovered non-empty wallets: {recovered_count}")
-    print(f"Deleted rows from DB: {deleted_count}")
-    print(f"Skipped rows (not deleted): {len(wallets) - deleted_count}")
+    if db_mode:
+        print(f"Deleted rows from DB: {deleted_count}")
+        print(f"Skipped rows (not deleted): {len(wallets) - deleted_count}")
+    else:
+        print("Manual TXT mode: DB delete step skipped")
 
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Read wallets from PostgreSQL, check balances, append non-empty wallets to file and delete processed rows."
+        description=(
+            "Read wallets from PostgreSQL or manual TXT, check balances, append non-empty wallets to output file. "
+            "In PostgreSQL mode processed rows are deleted."
+        )
+    )
+    parser.add_argument(
+        "--manual-wallets",
+        default="",
+        help="Path to manual wallets TXT file (chain,address per line). If set, PostgreSQL is not used.",
     )
     parser.add_argument("--postgres-conn", help="PostgreSQL connection string. Defaults to RECOVERY_POSTGRES_CONN from .env/env")
     parser.add_argument("--postgres-table", default="", help="PostgreSQL table with wallet records (default: recovered_wallets)")
@@ -245,8 +300,13 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.manual_wallets:
+            wallets = parse_manual_wallets(args.manual_wallets)
+            return process_wallets(wallets, args.output, args.delay_seconds)
+
         conn, table = resolve_config(args.postgres_conn, args.postgres_table, args.env_file)
-        return process_wallets(conn, table, args.output, args.delay_seconds)
+        wallets = fetch_rows(conn, table)
+        return process_wallets(wallets, args.output, args.delay_seconds, conn=conn, table=table)
     except Exception as exc:  # noqa: BLE001 - command-line entrypoint
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
