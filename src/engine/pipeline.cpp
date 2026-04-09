@@ -98,25 +98,6 @@ std::string trim_copy(const std::string& value) {
     return std::string(begin, end);
 }
 
-std::string format_balance(double value) {
-    std::ostringstream oss;
-    oss.setf(std::ios::fixed);
-    oss.precision(9);
-    oss << value;
-    std::string formatted = oss.str();
-    auto dot_pos = formatted.find('.');
-    if (dot_pos == std::string::npos) {
-        return formatted + ".0";
-    }
-    while (!formatted.empty() && formatted.back() == '0') {
-        formatted.pop_back();
-    }
-    if (!formatted.empty() && formatted.back() == '.') {
-        formatted.push_back('0');
-    }
-    return formatted;
-}
-
 std::string escape_sql_literal(const std::string& value) {
     std::string out;
     out.reserve(value.size());
@@ -128,6 +109,12 @@ std::string escape_sql_literal(const std::string& value) {
         }
     }
     return out;
+}
+
+std::string wallet_record_key(const std::string& chain_name,
+                              const std::string& address,
+                              const std::string& mnemonic_words) {
+    return chain_name + "|" + address + "|" + mnemonic_words;
 }
 
 std::string shell_quote_single(const std::string& value) {
@@ -345,64 +332,90 @@ void Pipeline::print_console_header() {
     }
 
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << "WALLET || BALANCE || ADRESS || SEED (12 WORDS)\n";
+    std::cout << "WALLET || ADDRESS || SEED (12 WORDS)\n";
 }
 
 void Pipeline::print_console_row(const std::string& chain_name,
-                                 double balance_coin,
                                  const std::string& address,
                                  const std::string& mnemonic_words) {
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << chain_name << " || " << format_balance(balance_coin) << " || " << address << " || " << mnemonic_words
-              << '\n';
+    std::cout << chain_name << " || " << address << " || " << mnemonic_words << '\n';
 }
 
-void Pipeline::persist_recovered_wallet(const std::string& chain_name,
-                                        const std::string& address,
-                                        const core::Mnemonic& mnemonic,
-                                        double balance_coin,
-                                        const std::string& coin_ticker) const {
-    if (!config_.postgres_conninfo.empty()) {
-        if (!is_valid_sql_identifier(config_.postgres_table)) {
-            throw std::runtime_error("Invalid PostgreSQL table name: " + config_.postgres_table);
+bool Pipeline::wallet_record_exists(const std::string& chain_name,
+                                    const std::string& address,
+                                    const std::string& mnemonic_words) const {
+    const std::string key = wallet_record_key(chain_name, address, mnemonic_words);
+    {
+        std::lock_guard<std::mutex> lock(wallet_cache_mutex_);
+        if (known_wallet_records_.contains(key)) {
+            return true;
         }
-        const std::string mnemonic_words = mnemonic_to_string(mnemonic);
-        std::call_once(postgres_init_once_, [&]() {
-            const std::string ddl =
-                "CREATE TABLE IF NOT EXISTS " + config_.postgres_table + " ("
-                "id BIGSERIAL PRIMARY KEY, "
-                "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
-                "chain TEXT NOT NULL, "
-                "address TEXT NOT NULL, "
-                "balance_coin DOUBLE PRECISION NOT NULL, "
-                "coin_ticker TEXT NOT NULL, "
-                "mnemonic TEXT NOT NULL"
-                ");";
-            exec_psql_command(config_.postgres_conninfo, ddl);
-        });
+    }
 
-        const std::string insert =
-            "INSERT INTO " + config_.postgres_table +
-            " (chain, address, balance_coin, coin_ticker, mnemonic) VALUES ('" +
-            escape_sql_literal(chain_name) + "', '" +
-            escape_sql_literal(address) + "', " + std::to_string(balance_coin) + ", '" +
-            escape_sql_literal(coin_ticker) + "', '" +
-            escape_sql_literal(mnemonic_words) + "');";
+    if (config_.postgres_conninfo.empty()) {
+        return false;
+    }
 
-        std::lock_guard<std::mutex> lock(postgres_mutex_);
-        exec_psql_command(config_.postgres_conninfo, insert);
+    if (!is_valid_sql_identifier(config_.postgres_table)) {
+        throw std::runtime_error("Invalid PostgreSQL table name: " + config_.postgres_table);
+    }
+    std::call_once(postgres_init_once_, [&]() {
+        const std::string ddl =
+            "CREATE TABLE IF NOT EXISTS " + config_.postgres_table + " ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
+            "blockchain TEXT NOT NULL, "
+            "address TEXT NOT NULL, "
+            "mnemonic TEXT NOT NULL, "
+            "UNIQUE(blockchain, address, mnemonic)"
+            ");";
+        exec_psql_command(config_.postgres_conninfo, ddl);
+    });
+    return false;
+}
+
+void Pipeline::persist_wallet_record(const std::string& chain_name,
+                                     const std::string& address,
+                                     const core::Mnemonic& mnemonic) const {
+    const std::string mnemonic_words = mnemonic_to_string(mnemonic);
+    const std::string key = wallet_record_key(chain_name, address, mnemonic_words);
+
+    if (wallet_record_exists(chain_name, address, mnemonic_words)) {
         return;
     }
 
-    std::ofstream out(config_.recovered_wallets_path, std::ios::app);
-    if (!out) {
-        throw std::runtime_error("Failed to open recovered wallets file: " + config_.recovered_wallets_path);
+    if (config_.postgres_conninfo.empty()) {
+        return;
     }
 
-    out << "chain: " << chain_name << '\n';
-    out << "address: " << address << '\n';
-    out << "balance_coin: " << balance_coin << ' ' << coin_ticker << '\n';
-    out << "mnemonic: " << mnemonic_to_string(mnemonic) << "\n\n";
+    if (!is_valid_sql_identifier(config_.postgres_table)) {
+        throw std::runtime_error("Invalid PostgreSQL table name: " + config_.postgres_table);
+    }
+    std::call_once(postgres_init_once_, [&]() {
+        const std::string ddl =
+            "CREATE TABLE IF NOT EXISTS " + config_.postgres_table + " ("
+            "id BIGSERIAL PRIMARY KEY, "
+            "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), "
+            "blockchain TEXT NOT NULL, "
+            "address TEXT NOT NULL, "
+            "mnemonic TEXT NOT NULL, "
+            "UNIQUE(blockchain, address, mnemonic)"
+            ");";
+        exec_psql_command(config_.postgres_conninfo, ddl);
+    });
+
+    const std::string insert =
+        "INSERT INTO " + config_.postgres_table +
+        " (blockchain, address, mnemonic) VALUES ('" +
+        escape_sql_literal(chain_name) + "', '" +
+        escape_sql_literal(address) + "', '" +
+        escape_sql_literal(mnemonic_words) + "') ON CONFLICT DO NOTHING;";
+
+    std::lock_guard<std::mutex> lock(postgres_mutex_);
+    exec_psql_command(config_.postgres_conninfo, insert);
+    std::lock_guard<std::mutex> cache_lock(wallet_cache_mutex_);
+    known_wallet_records_.insert(key);
 }
 
 std::optional<std::pair<std::string, std::string>> Pipeline::parse_manual_wallet_line(const std::string& line) const {
@@ -454,18 +467,13 @@ void Pipeline::run_manual_wallet_checks() {
         const auto module_it = modules_by_name.find(chain_name);
         if (module_it == modules_by_name.end()) {
             std::lock_guard<std::mutex> lock(console_mutex_);
-            std::cout << "skip || 0 || " << address << " || unknown chain: " << chain_name << '\n';
-            continue;
-        }
-
-        const double balance = module_it->second->fetch_balance_coin(address);
-        print_console_row(chain_name, balance, address, "[manual input]");
-        if (balance <= 0.0) {
+            std::cout << "skip || " << address << " || unknown chain: " << chain_name << '\n';
             continue;
         }
 
         core::Mnemonic manual_marker{"[manual", "input]"};
-        persist_recovered_wallet(chain_name, address, manual_marker, balance, module_it->second->coin_ticker());
+        persist_wallet_record(chain_name, address, manual_marker);
+        print_console_row(chain_name, address, "[manual input]");
     }
 }
 
@@ -480,7 +488,7 @@ void Pipeline::run() {
     core::ThreadPool pool(config_.threads);
     print_console_header();
     std::atomic<std::uint64_t> processed_candidates{0};
-    std::atomic<std::uint64_t> recovered_wallets{0};
+    std::atomic<std::uint64_t> stored_wallets{0};
     auto seen_mnemonics = load_seen_mnemonics(config_.seen_mnemonics_path);
 
     const std::size_t valid_candidates = generator_.generate(
@@ -497,16 +505,10 @@ void Pipeline::run() {
             if (!mark_seen_mnemonic_atomic(config_.seen_mnemonics_path, mnemonic_words, seen_mnemonics)) {
                 return false;
             }
-            if (!claim_seen_mnemonic(config_.seen_mnemonics_path, mnemonic_words)) {
-                seen_mnemonics.insert(mnemonic_words);
-                return false;
-            }
-            seen_mnemonics.insert(mnemonic_words);
             auto seed = mnemonic_to_seed(mnemonic, config_.bip39_passphrase);
             struct ChainMatchResult {
                 std::string chain_name;
                 std::optional<std::string> matched_address;
-                double balance_coin{0.0};
             };
 
             std::vector<std::future<ChainMatchResult>> futures;
@@ -521,31 +523,25 @@ void Pipeline::run() {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     if (matcher_.has_targets()) {
                         for (const auto& address : derived) {
-                            const double balance = module_ptr->fetch_balance_coin(address);
-                            print_console_row(module_ptr->name(), balance, address, mnemonic_words);
+                            persist_wallet_record(module_ptr->name(), address, mnemonic);
+                            ++stored_wallets;
+                            print_console_row(module_ptr->name(), address, mnemonic_words);
                             if (matcher_.contains_address(address)) {
                                 return ChainMatchResult{
                                     module_ptr->name(),
                                     address,
-                                    balance,
                                 };
                             }
                         }
-                        return ChainMatchResult{module_ptr->name(), std::nullopt, 0.0};
+                        return ChainMatchResult{module_ptr->name(), std::nullopt};
                     }
 
                     for (const auto& address : derived) {
-                        const double balance = module_ptr->fetch_balance_coin(address);
-                        print_console_row(module_ptr->name(), balance, address, mnemonic_words);
-                        if (balance > 0.0) {
-                            return ChainMatchResult{
-                                module_ptr->name(),
-                                address,
-                                balance,
-                            };
-                        }
+                        persist_wallet_record(module_ptr->name(), address, mnemonic);
+                        ++stored_wallets;
+                        print_console_row(module_ptr->name(), address, mnemonic_words);
                     }
-                    return ChainMatchResult{module_ptr->name(), std::nullopt, 0.0};
+                    return ChainMatchResult{module_ptr->name(), std::nullopt};
                 }));
             }
 
@@ -568,12 +564,8 @@ void Pipeline::run() {
                 const auto module_it = std::find_if(modules_.begin(), modules_.end(), [&](const auto& module) {
                     return module->name() == result.chain_name;
                 });
-                const std::string coin_ticker = module_it != modules_.end() ? (*module_it)->coin_ticker() : "coin";
-                const double balance = result.balance_coin;
-                persist_recovered_wallet(result.chain_name, *result.matched_address, mnemonic, balance, coin_ticker);
-                ++recovered_wallets;
-                std::cout << "Recovered " << result.chain_name << " wallet: " << *result.matched_address << ' '
-                          << balance << ' ' << coin_ticker << '\n';
+                (void)module_it;
+                std::cout << "Matched " << result.chain_name << " wallet: " << *result.matched_address << '\n';
             }
 
             return false;
@@ -583,7 +575,7 @@ void Pipeline::run() {
         std::lock_guard<std::mutex> lock(console_mutex_);
         std::cout << "Done. Valid candidates: " << valid_candidates
                   << ", processed: " << processed_candidates.load()
-                  << ", recovered wallets: " << recovered_wallets.load() << ".\n";
+                  << ", stored wallets: " << stored_wallets.load() << ".\n";
         if (valid_candidates == 0) {
             std::cout << "Hint: search finished immediately because there were no valid candidates for the current "
                          "template/wordlist settings.\n";

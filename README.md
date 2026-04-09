@@ -19,11 +19,11 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - Ethereum addresses are output in canonical hex format with `0x` prefix.
 - `engine::Pipeline` and `engine::Matcher` for async candidate processing and address matching.
 - Per-chain deduplication: once a chain wallet is recovered, that chain is skipped for all next candidates.
-- Scanner-based balance checks for derived BTC/ETH/SOL addresses.
-- Manual wallet balance-check mode from a TXT file (`--manual-wallets`) for parser/scanner verification.
-- Console output in `coin` units (not USD), e.g. `0 coin`, `0.15 coin`.
-- Automatic persistence of recovered wallets (`chain`, `address`, `balance_coin`, `mnemonic`) to a TXT file.
-- Optional persistence of recovered wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`).
+- Automatic persistence of generated wallets in `blockchain/address/mnemonic` format.
+- Duplicate wallet protection when creating wallet records from seed phrases.
+- Manual wallet import mode from a TXT file (`--manual-wallets`) for parser verification.
+- Console output without balance values: `wallet || address || seed`.
+- Optional persistence of generated wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`); TXT storage is not used.
 - Basic CLI parser and executable entrypoint.
 - Minimal tests (`test_bip39`, `test_derivation`, `test_pipeline`).
 
@@ -116,14 +116,13 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - `--shuffle-words` randomizes wildcard substitution order to avoid always starting from the same alphabetic prefix.
 > - `--shuffle-seed <number>` enables shuffle with a fixed seed for reproducible runs.
 > - `--allow-words "abandon,ability,about"` limits wildcard substitutions without editing the original BIP-39 wordlist.
-> - For ETH scanner requests set `ETHERSCAN_API_KEY` in the environment for stable results.
-> - You can run only manual balance checks without seed generation by using `--manual-wallets`.
-> - If `--postgres-conn` is set, recovered wallets are written to PostgreSQL instead of TXT.
+> - You can run only manual wallet imports without seed generation by using `--manual-wallets`.
+> - Wallet records are written only to PostgreSQL when `--postgres-conn` is set.
 > - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
 
 ## Manual wallet check mode
 
-Use this mode when you want to verify parser/scanner behavior on known addresses from a text file.
+Use this mode when you want to verify parser behavior on known addresses from a text file.
 
 ### Input format (`manual_wallets.txt`)
 
