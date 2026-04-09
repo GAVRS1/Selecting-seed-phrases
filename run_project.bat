@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 
 REM Run from repository root.
 cd /d "%~dp0"
@@ -63,6 +63,43 @@ if not exist ".env" (
 
 set "TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
 set "MAX_CANDIDATES=0"
+set "THREADS=8"
+set "SCAN_LIMIT=20"
+set "STARTED_CONSOLES=0"
+
+REM Default launch controls (can be overridden in .env)
+set "RECOVERY_ENABLE_BTC=true"
+set "RECOVERY_ENABLE_ETH=true"
+set "RECOVERY_ENABLE_SOL=true"
+set "RECOVERY_ENABLE_TON=true"
+set "RECOVERY_CONSOLES_BTC=1"
+set "RECOVERY_CONSOLES_ETH=1"
+set "RECOVERY_CONSOLES_SOL=1"
+set "RECOVERY_CONSOLES_TON=1"
+
+call :load_env_value RECOVERY_ENABLE_BTC
+call :load_env_value RECOVERY_ENABLE_ETH
+call :load_env_value RECOVERY_ENABLE_SOL
+call :load_env_value RECOVERY_ENABLE_TON
+call :load_env_value RECOVERY_CONSOLES_BTC
+call :load_env_value RECOVERY_CONSOLES_ETH
+call :load_env_value RECOVERY_CONSOLES_SOL
+call :load_env_value RECOVERY_CONSOLES_TON
+
+call :normalize_bool RECOVERY_ENABLE_BTC
+call :normalize_bool RECOVERY_ENABLE_ETH
+call :normalize_bool RECOVERY_ENABLE_SOL
+call :normalize_bool RECOVERY_ENABLE_TON
+
+call :normalize_count RECOVERY_CONSOLES_BTC
+if errorlevel 1 goto :error
+call :normalize_count RECOVERY_CONSOLES_ETH
+if errorlevel 1 goto :error
+call :normalize_count RECOVERY_CONSOLES_SOL
+if errorlevel 1 goto :error
+call :normalize_count RECOVERY_CONSOLES_TON
+if errorlevel 1 goto :error
+
 set "RECOVERY_EXE=build\recovery_tool.exe"
 if not exist "%RECOVERY_EXE%" (
   if exist "build\Release\recovery_tool.exe" (
@@ -77,16 +114,20 @@ if not exist "%RECOVERY_EXE%" (
   goto :error
 )
 
-echo Opening separate consoles for BTC / ETH / SOL / TON ^(C++ derive only, no balance check^) ...
-start "BTC recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "btc" --bip39-passphrase "" --paths-btc "m/84'/0'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
-start "ETH recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "eth" --bip39-passphrase "" --paths-eth "m/44'/60'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
-start "SOL recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "sol" --bip39-passphrase "" --paths-sol "m/44'/501'/{i}'/0'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
-start "TON recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "ton" --bip39-passphrase "" --paths-ton "m/44'/607'/0'/{i}'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
+echo Opening recovery consoles using .env settings...
+call :launch_chain btc "m/84'/0'/0'/0/{i}" RECOVERY_ENABLE_BTC RECOVERY_CONSOLES_BTC
+call :launch_chain eth "m/44'/60'/0'/0/{i}" RECOVERY_ENABLE_ETH RECOVERY_CONSOLES_ETH
+call :launch_chain sol "m/44'/501'/{i}'/0'" RECOVERY_ENABLE_SOL RECOVERY_CONSOLES_SOL
+call :launch_chain ton "m/44'/607'/0'/{i}'" RECOVERY_ENABLE_TON RECOVERY_CONSOLES_TON
+
+if "%STARTED_CONSOLES%"=="0" (
+  echo No recovery consoles started: all chains are disabled or have zero console count.
+)
 
 start "Python balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --output recovered_wallets.txt --delay-seconds 0.2"
 
 echo.
-echo Consoles started.
+echo Recovery consoles started: %STARTED_CONSOLES%.
 goto :end
 
 :error
@@ -96,3 +137,64 @@ echo Failed with error code %errorlevel%.
 :end
 pause
 endlocal
+goto :eof
+
+:load_env_value
+set "ENV_KEY=%~1"
+for /f "usebackq tokens=1* delims==" %%A in (`findstr /b /c:"%ENV_KEY%=" ".env"`) do (
+  set "ENV_RAW=%%B"
+  if defined ENV_RAW (
+    if "!ENV_RAW:~0,1!"=="^"" if "!ENV_RAW:~-1!"=="^"" set "ENV_RAW=!ENV_RAW:~1,-1!"
+  )
+  set "%ENV_KEY%=!ENV_RAW!"
+  goto :eof
+)
+goto :eof
+
+:normalize_bool
+set "BOOL_KEY=%~1"
+call set "BOOL_VALUE=%%%BOOL_KEY%%%"
+if /i "%BOOL_VALUE%"=="1" set "%BOOL_KEY%=true"
+if /i "%BOOL_VALUE%"=="yes" set "%BOOL_KEY%=true"
+if /i "%BOOL_VALUE%"=="on" set "%BOOL_KEY%=true"
+if /i "%BOOL_VALUE%"=="0" set "%BOOL_KEY%=false"
+if /i "%BOOL_VALUE%"=="no" set "%BOOL_KEY%=false"
+if /i "%BOOL_VALUE%"=="off" set "%BOOL_KEY%=false"
+goto :eof
+
+:normalize_count
+set "COUNT_KEY=%~1"
+call set "COUNT_VALUE=%%%COUNT_KEY%%%"
+for /f "delims=0123456789" %%X in ("%COUNT_VALUE%") do (
+  echo Invalid numeric value for %COUNT_KEY% in .env: %COUNT_VALUE%
+  exit /b 1
+)
+if "%COUNT_VALUE%"=="" (
+  echo Empty numeric value for %COUNT_KEY% in .env.
+  exit /b 1
+)
+set "%COUNT_KEY%=%COUNT_VALUE%"
+exit /b 0
+
+:launch_chain
+set "CHAIN_NAME=%~1"
+set "CHAIN_PATH=%~2"
+set "CHAIN_ENABLED_KEY=%~3"
+set "CHAIN_COUNT_KEY=%~4"
+call set "CHAIN_ENABLED=%%%CHAIN_ENABLED_KEY%%%"
+call set "CHAIN_COUNT=%%%CHAIN_COUNT_KEY%%%"
+
+if /i not "%CHAIN_ENABLED%"=="true" (
+  echo %CHAIN_NAME%: disabled in .env ^(%CHAIN_ENABLED_KEY%=%CHAIN_ENABLED%^).
+  goto :eof
+)
+if "%CHAIN_COUNT%"=="0" (
+  echo %CHAIN_NAME%: console count is 0 ^(%CHAIN_COUNT_KEY%^).
+  goto :eof
+)
+
+for /l %%i in (1,1,%CHAIN_COUNT%) do (
+  start "%CHAIN_NAME% recovery %%i" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "%CHAIN_NAME%" --bip39-passphrase "" --paths-%CHAIN_NAME% "%CHAIN_PATH%" --scan-limit %SCAN_LIMIT% --max-candidates %MAX_CANDIDATES% --threads %THREADS% --env-file ".env""
+  set /a STARTED_CONSOLES+=1
+)
+goto :eof
