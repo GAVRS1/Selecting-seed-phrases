@@ -226,6 +226,26 @@ Lines starting with `#` are ignored.
 - запускает `build\recovery_tool.exe` для генерации адресов в PostgreSQL (без проверки баланса внутри C++),
 - запускает отдельную консоль с `scripts/check_wallet_balances.py` для проверки балансов и очистки обработанных строк.
 
+### Управление количеством и типом консолей через `.env`
+
+В `.env` (или `.env.example` как шаблон) можно включать/выключать сети и задавать количество консолей на сеть:
+
+```dotenv
+RECOVERY_ENABLE_BTC=true
+RECOVERY_ENABLE_ETH=true
+RECOVERY_ENABLE_SOL=false
+RECOVERY_ENABLE_TON=false
+
+RECOVERY_CONSOLES_BTC=25
+RECOVERY_CONSOLES_ETH=100
+RECOVERY_CONSOLES_SOL=0
+RECOVERY_CONSOLES_TON=0
+```
+
+- Если `RECOVERY_ENABLE_<CHAIN>=false`, эта сеть не запускается.
+- Если `RECOVERY_CONSOLES_<CHAIN>=0`, для сети не открывается ни одной консоли.
+- Таким образом остаётся **один общий запуск** проекта через `run_project.bat`, а детализация по сетям задаётся в `.env`.
+
 Для ручной проверки адресов из файла используйте `run_manual_test.bat`.
 
 ## Подробная установка на Windows (Visual Studio уже установлена)
