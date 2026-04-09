@@ -6,6 +6,7 @@ cd /d "%~dp0"
 
 set "CMAKE_EXTRA_ARGS="
 set "VCPKG_EFFECTIVE_ROOT="
+set "PYTHON_BIN=python"
 
 if exist "vcpkg.json" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Get-Content -Raw -Path '.\vcpkg.json' | ConvertFrom-Json | Out-Null; exit 0 } catch { exit 1 }"
@@ -21,7 +22,6 @@ if exist "vcpkg.json" (
   )
 )
 
-REM Prefer local ./vcpkg inside this repo if it exists.
 if exist "%cd%\vcpkg\scripts\buildsystems\vcpkg.cmake" (
   set "VCPKG_EFFECTIVE_ROOT=%cd%\vcpkg"
 ) else if defined VCPKG_ROOT (
@@ -38,24 +38,16 @@ if defined OPENSSL_ROOT_DIR (
   set "CMAKE_EXTRA_ARGS=%CMAKE_EXTRA_ARGS% -DOPENSSL_ROOT_DIR=%OPENSSL_ROOT_DIR%"
 )
 
+where py >nul 2>&1
+if not errorlevel 1 (
+  set "PYTHON_BIN=py -3"
+)
+
 echo [1/3] Configuring CMake...
 cmake -S . -B build %CMAKE_EXTRA_ARGS%
 if errorlevel 1 (
   echo.
   echo CMake configure failed.
-  echo Check messages above. Common reasons:
-  echo   - missing OpenSSL dependency
-  echo   - broken/missing source files in the repository
-  echo.
-  echo Option 1 ^(recommended^):
-  echo   1^) Install vcpkg and package: openssl:x64-windows
-  echo   2^) put vcpkg near this repo in .\vcpkg OR run: setx VCPKG_ROOT C:\path\to\vcpkg
-  echo   3^) Install package: %%VCPKG_ROOT%%\vcpkg install openssl:x64-windows
-  echo   4^) Re-open terminal and run this script again
-  echo.
-  echo Option 2:
-  echo   setx OPENSSL_ROOT_DIR C:\path\to\openssl
-  echo   Re-open terminal and run this script again
   goto :error
 )
 
@@ -63,15 +55,13 @@ echo [2/3] Building project...
 cmake --build build --config Release
 if errorlevel 1 goto :error
 
-echo [3/3] Running recovery_tool...
-if not exist recovered_wallets.txt (
-  type nul > recovered_wallets.txt
+echo [3/3] Running recovery + separate Python balance checker...
+if not exist ".env" (
+  echo Missing .env file. Copy .env.example to .env and set RECOVERY_POSTGRES_CONN.
+  goto :error
 )
 
-REM By default search all 12 positions from the active wordlist.
-REM If you know some positions exactly, replace corresponding '*' with known words.
 set "TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
-REM 0 = unlimited search. Use a positive number to stop automatically after N valid candidates.
 set "MAX_CANDIDATES=0"
 set "RECOVERY_EXE=build\recovery_tool.exe"
 if not exist "%RECOVERY_EXE%" (
@@ -87,11 +77,13 @@ if not exist "%RECOVERY_EXE%" (
   goto :error
 )
 
-echo Opening separate consoles for BTC / ETH / SOL / TON...
-start "BTC recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "btc" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-btc "m/84'/0'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
-start "ETH recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "eth" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-eth "m/44'/60'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
-start "SOL recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "sol" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-sol "m/44'/501'/{i}'/0'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
-start "TON recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "ton" --recovered-wallets "recovered_wallets.txt" --bip39-passphrase "" --paths-ton "m/44'/607'/0'/{i}'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8"
+echo Opening separate consoles for BTC / ETH / SOL / TON ^(C++ derive only, no balance check^) ...
+start "BTC recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "btc" --bip39-passphrase "" --paths-btc "m/84'/0'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
+start "ETH recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "eth" --bip39-passphrase "" --paths-eth "m/44'/60'/0'/0/{i}" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
+start "SOL recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "sol" --bip39-passphrase "" --paths-sol "m/44'/501'/{i}'/0'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
+start "TON recovery" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "ton" --bip39-passphrase "" --paths-ton "m/44'/607'/0'/{i}'" --scan-limit 20 --max-candidates %MAX_CANDIDATES% --threads 8 --env-file ".env""
+
+start "Python balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --output recovered_wallets.txt --delay-seconds 0.2"
 
 echo.
 echo Consoles started.
