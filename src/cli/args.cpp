@@ -176,11 +176,6 @@ core::AppConfig parse_args(int argc, char** argv) {
     if (cfg.template_words.empty() && cfg.manual_wallets_path.empty()) {
         throw std::invalid_argument("either --template or --manual-wallets is required");
     }
-    const bool ton_requested =
-        std::find(cfg.chains.begin(), cfg.chains.end(), "ton") != cfg.chains.end() || !cfg.paths_ton.empty();
-    if (ton_requested && !cfg.template_words.empty() && cfg.template_words.size() != 24) {
-        throw std::invalid_argument("TON requires exactly 24 mnemonic words in --template");
-    }
     return cfg;
 }
 
