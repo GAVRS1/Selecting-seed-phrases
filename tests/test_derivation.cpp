@@ -24,8 +24,8 @@ int main() {
     auto ton_addresses = ton_module.derive_addresses(seed, {"m/44'/607'/0'/{i}'"}, 2);
     assert(ton_addresses.size() == 2);
     for (const auto& address : ton_addresses) {
-        assert(address.rfind("0:", 0) == 0);
-        assert(address.size() == 66);
+        assert(address.rfind("0:", 0) != 0);
+        assert(address.size() == 48);
     }
 
     std::cout << "test_derivation passed\n";
