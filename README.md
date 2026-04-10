@@ -143,8 +143,6 @@ Windows (double-click friendly, with `pause` at the end):
 scripts\db_migrate.bat
 ```
 
-> Note: `psql` must be installed and available in `PATH` (PostgreSQL client tools).
-
 Optional: custom env file path.
 
 ```bash
