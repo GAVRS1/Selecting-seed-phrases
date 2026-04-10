@@ -190,6 +190,17 @@ python3 scripts/check_wallet_balances.py \
 - `--delay-seconds` — задержка между запросами к API (полезно при rate-limit).
 - `--output` — путь к файлу для найденных непустых кошельков.
 
+Прокси для Python-чекера (только `scripts/check_wallet_balances.py`):
+
+- `RECOVERY_BALANCE_CHECKER_PROXY_ENABLED=true|false` — включить/выключить использование прокси.
+- Список прокси читается из файла `data/proxies.txt`.
+- Поддерживаемый формат каждой строки:
+  - `host:port`
+  - `host:port:username:password` (пример: `45.147.1.168:64136:Bb7w2GCL:7rxvC2AW`)
+- При неудачном запросе checker автоматически переключается на следующий прокси из списка.
+
+Если прокси включён, но файл `data/proxies.txt` отсутствует, пустой или содержит неверный формат, скрипт завершится с ошибкой.
+
 ## Manual wallet check mode
 
 Use this mode when you want to verify parser behavior on known addresses from a text file.
@@ -251,6 +262,9 @@ RECOVERY_CONSOLES_TON=0
 
 # Запускать ли checker вместе с run_project.bat.
 RECOVERY_RUN_BALANCE_CHECKER=true
+
+# Proxy settings only for scripts/check_wallet_balances.py.
+RECOVERY_BALANCE_CHECKER_PROXY_ENABLED=false
 ```
 
 - Если `RECOVERY_ENABLE_<CHAIN>=false`, эта сеть не запускается.
