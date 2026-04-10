@@ -146,7 +146,10 @@ def parse_manual_wallets(path: str) -> list[WalletRow]:
 
 def request_json(url: str, payload: dict | None = None) -> dict:
     data = None
-    headers = {}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "curl/8.0.1",
+    }
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -329,9 +332,16 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
 
     # Also check ERC-20 token balances via Ethplorer public endpoint
     # so non-ETH token holdings are not missed.
-    token_info = request_json(
-        f"https://api.ethplorer.io/getAddressInfo/{urllib.parse.quote(address)}?apiKey=freekey"
-    )
+    token_info: dict = {}
+    try:
+        token_info = request_json(
+            f"https://api.ethplorer.io/getAddressInfo/{urllib.parse.quote(address)}?apiKey=freekey"
+        )
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            print(f"[WARN] Ethplorer returned HTTP 403 for {address}. Continue with native ETH balance only.")
+        else:
+            raise
     token_chunks: list[str] = []
     for token in token_info.get("tokens", []) or []:
         token_balance_raw = token.get("balance")
