@@ -49,35 +49,25 @@ std::size_t MnemonicGenerator::generate(
     std::size_t produced = 0;
     core::Mnemonic current = pattern;
     std::vector<std::vector<std::string>> choices_by_position(current.size());
-    std::vector<std::size_t> wildcard_positions;
 
-    const bool shuffle_enabled = shuffle_seed_.has_value();
-    std::mt19937_64 rng;
-    if (shuffle_enabled) {
-        rng.seed(*shuffle_seed_);
-    }
+    const std::uint64_t effective_seed =
+        shuffle_seed_.has_value() ? *shuffle_seed_ : static_cast<std::uint64_t>(std::random_device{}());
+    std::mt19937_64 seed_rng(effective_seed);
 
     for (std::size_t pos = 0; pos < current.size(); ++pos) {
         if (current[pos] != "*") {
             continue;
         }
-        wildcard_positions.push_back(pos);
         choices_by_position[pos] = allow_words_;
-        if (shuffle_enabled) {
-            std::shuffle(choices_by_position[pos].begin(), choices_by_position[pos].end(), rng);
-        }
+        std::shuffle(choices_by_position[pos].begin(), choices_by_position[pos].end(), seed_rng);
     }
 
-    if (shuffle_enabled && wildcard_positions.size() > 1) {
-        std::shuffle(wildcard_positions.begin(), wildcard_positions.end(), rng);
-    }
-
-    std::function<bool(std::size_t)> dfs = [&](std::size_t wildcard_idx) {
+    std::function<bool(std::size_t)> dfs = [&](std::size_t pos) {
         if (max_candidates > 0 && produced >= max_candidates) {
             return true;
         }
 
-        if (wildcard_idx == wildcard_positions.size()) {
+        if (pos == current.size()) {
             if (validator.validate(current)) {
                 ++produced;
                 return on_valid_candidate(current);
@@ -85,15 +75,17 @@ std::size_t MnemonicGenerator::generate(
             return false;
         }
 
-        const std::size_t pos = wildcard_positions[wildcard_idx];
+        if (current[pos] != "*") {
+            return dfs(pos + 1);
+        }
+
         const auto& choices = choices_by_position[pos];
         for (const auto& candidate_word : choices) {
             current[pos] = candidate_word;
-            if (dfs(wildcard_idx + 1)) {
+            if (dfs(pos + 1)) {
                 return true;
             }
         }
-
         current[pos] = "*";
         return false;
     };
