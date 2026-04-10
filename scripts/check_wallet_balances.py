@@ -30,6 +30,7 @@ from typing import Iterable
 
 HTTP_TIMEOUT_SECONDS = 20
 PSQL_BIN = os.environ.get("PSQL_BIN", "psql")
+DEFAULT_PROXY_ENABLED = False
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,60 @@ def request_text(url: str) -> str:
     req = urllib.request.Request(url=url, method="GET")
     with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
         return response.read().decode("utf-8", errors="replace").strip()
+
+
+def parse_bool_env(value: str | None, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value!r}")
+
+
+def build_proxy_url(proxy_raw: str) -> str:
+    proxy_parts = proxy_raw.strip().split(":")
+    if len(proxy_parts) not in (2, 4):
+        raise ValueError(
+            "Invalid RECOVERY_BALANCE_CHECKER_PROXY format. "
+            "Use host:port or host:port:username:password."
+        )
+
+    host, port = proxy_parts[0].strip(), proxy_parts[1].strip()
+    if not host or not port:
+        raise ValueError("Invalid RECOVERY_BALANCE_CHECKER_PROXY: host and port must be non-empty.")
+
+    if len(proxy_parts) == 2:
+        return f"http://{host}:{port}"
+
+    username = urllib.parse.quote(proxy_parts[2], safe="")
+    password = urllib.parse.quote(proxy_parts[3], safe="")
+    return f"http://{username}:{password}@{host}:{port}"
+
+
+def configure_network(env_file: str) -> None:
+    env_values = parse_env_file(env_file)
+    proxy_enabled = parse_bool_env(
+        os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED")
+        or env_values.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED"),
+        default=DEFAULT_PROXY_ENABLED,
+    )
+    if not proxy_enabled:
+        return
+
+    proxy_raw = os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY") or env_values.get("RECOVERY_BALANCE_CHECKER_PROXY")
+    if not proxy_raw:
+        raise ValueError(
+            "RECOVERY_BALANCE_CHECKER_PROXY_ENABLED=true but RECOVERY_BALANCE_CHECKER_PROXY is empty. "
+            "Expected host:port or host:port:username:password."
+        )
+
+    proxy_url = build_proxy_url(proxy_raw)
+    proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+    urllib.request.install_opener(urllib.request.build_opener(proxy_handler))
+    print("[INFO] Proxy is enabled for balance checker requests.")
 
 
 def format_decimal(value: Decimal, *, precision: int = 18) -> str:
@@ -347,6 +402,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        configure_network(args.env_file)
         if args.manual_wallets:
             wallets = parse_manual_wallets(args.manual_wallets)
             return process_wallets(wallets, args.output, args.delay_seconds)
