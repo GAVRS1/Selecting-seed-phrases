@@ -230,7 +230,9 @@ Lines starting with `#` are ignored.
 - настраивает CMake в `build/` (если папки ещё нет),
 - собирает проект,
 - запускает `build\recovery_tool.exe` для генерации адресов в PostgreSQL (без проверки баланса внутри C++),
-- запускает отдельную консоль с `scripts/check_wallet_balances.py` для проверки балансов и очистки обработанных строк.
+- может запускать отдельную консоль с `scripts/check_wallet_balances.py` для проверки балансов и очистки обработанных строк (управляется через `.env`).
+
+Для отдельного запуска только Python-чекера используйте `run_checker.bat`.
 
 ### Управление количеством и типом консолей через `.env`
 
@@ -246,11 +248,18 @@ RECOVERY_CONSOLES_BTC=25
 RECOVERY_CONSOLES_ETH=100
 RECOVERY_CONSOLES_SOL=0
 RECOVERY_CONSOLES_TON=0
+
+# Запускать ли checker вместе с run_project.bat.
+RECOVERY_RUN_BALANCE_CHECKER=true
 ```
 
 - Если `RECOVERY_ENABLE_<CHAIN>=false`, эта сеть не запускается.
 - Если `RECOVERY_CONSOLES_<CHAIN>=0`, для сети не открывается ни одной консоли.
 - Таким образом остаётся **один общий запуск** проекта через `run_project.bat`, а детализация по сетям задаётся в `.env`.
+
+- `RECOVERY_RUN_BALANCE_CHECKER=true` — вместе с recovery-консолями запускается и Python checker.
+- `RECOVERY_RUN_BALANCE_CHECKER=false` — `run_project.bat` запускает только recovery-консоли.
+- Для запуска checker вручную в любое время используйте `run_checker.bat`.
 
 Для ручной проверки адресов из файла используйте `run_manual_test.bat`.
 
