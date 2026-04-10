@@ -39,7 +39,7 @@ int main() {
         std::vector<std::string> storage{
             "recovery_tool",
             "--template",
-            "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
+            "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
             "--allow-words",
             "bird,body,bridge",
             "--paths-ton",
@@ -52,10 +52,32 @@ int main() {
         }
 
         const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
-        assert(cfg.template_words.size() == 12);
+        assert(cfg.template_words.size() == 24);
         assert(cfg.allow_words.size() == 3);
         assert(cfg.paths_ton.size() == 1);
         assert(cfg.paths_ton[0] == "m/44'/607'/0'/{i}'");
+    }
+
+    {
+        std::vector<std::string> storage{
+            "recovery_tool",
+            "--template",
+            "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
+            "--chains",
+            "ton",
+        };
+        std::vector<char*> argv;
+        argv.reserve(storage.size());
+        for (auto& item : storage) {
+            argv.push_back(item.data());
+        }
+
+        const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
+        assert(cfg.template_words.size() == 24);
+        assert(cfg.template_words[0] == "abandon");
+        assert(cfg.template_words[11] == "ability");
+        assert(cfg.template_words[12] == "*");
+        assert(cfg.template_words[23] == "*");
     }
 
     {
