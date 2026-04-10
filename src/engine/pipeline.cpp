@@ -117,9 +117,20 @@ std::string wallet_record_key(const std::string& chain_name,
     return chain_name + "|" + address + "|" + mnemonic_words;
 }
 
-std::string shell_quote_single(const std::string& value) {
+std::string shell_quote_arg(const std::string& value) {
     std::string out;
     out.reserve(value.size() + 2);
+#ifdef _WIN32
+    out.push_back('"');
+    for (char c : value) {
+        if (c == '"') {
+            out += "\\\"";
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('"');
+#else
     out.push_back('\'');
     for (char c : value) {
         if (c == '\'') {
@@ -129,6 +140,7 @@ std::string shell_quote_single(const std::string& value) {
         }
     }
     out.push_back('\'');
+#endif
     return out;
 }
 
@@ -146,8 +158,8 @@ bool is_valid_sql_identifier(const std::string& value) {
 }
 
 void exec_psql_command(const std::string& conninfo, const std::string& sql) {
-    const std::string cmd = "psql " + shell_quote_single(conninfo) +
-                            " -v ON_ERROR_STOP=1 -q -c " + shell_quote_single(sql);
+    const std::string cmd = "psql " + shell_quote_arg(conninfo) +
+                            " -v ON_ERROR_STOP=1 -q -c " + shell_quote_arg(sql);
     const int rc = std::system(cmd.c_str());
     if (rc != 0) {
         throw std::runtime_error("Failed to execute PostgreSQL command via psql. Exit code: " + std::to_string(rc));

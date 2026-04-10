@@ -137,6 +137,14 @@ cp .env.example .env
 ./scripts/db_migrate.sh
 ```
 
+Windows (double-click friendly, with `pause` at the end):
+
+```bat
+scripts\db_migrate.bat
+```
+
+> Note: `psql` must be installed and available in `PATH` (PostgreSQL client tools).
+
 Optional: custom env file path.
 
 ```bash
