@@ -34,9 +34,11 @@ PSQL_BIN = os.environ.get("PSQL_BIN", "psql")
 DEFAULT_PROXY_ENABLED = False
 PROXY_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "proxies.txt"))
 MAX_PROXY_ATTEMPTS = 3
+DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
 
 NETWORK_OPENER: urllib.request.OpenerDirector | None = None
 PROXY_ROTATOR: "ProxyRotator | None" = None
+ETH_RPC_URL: str = DEFAULT_ETH_RPC_URL
 
 
 @dataclass(frozen=True)
@@ -274,8 +276,13 @@ def open_url(req: urllib.request.Request):
 
 
 def configure_network(env_file: str) -> None:
-    global NETWORK_OPENER, PROXY_ROTATOR  # noqa: PLW0603
+    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL  # noqa: PLW0603
     env_values = parse_env_file(env_file)
+    ETH_RPC_URL = (
+        os.environ.get("RECOVERY_ETH_RPC_URL")
+        or env_values.get("RECOVERY_ETH_RPC_URL")
+        or DEFAULT_ETH_RPC_URL
+    )
     proxy_enabled = parse_bool_env(
         os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED")
         or env_values.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED"),
@@ -313,7 +320,7 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
         "params": [address, "latest"],
         "id": 1,
     }
-    result = request_json("https://ethereum-rpc.publicnode.com", payload)
+    result = request_json(ETH_RPC_URL, payload)
     wei_hex = result.get("result")
     if not isinstance(wei_hex, str):
         raise RuntimeError(f"Unexpected ETH RPC response: {result}")
@@ -484,6 +491,7 @@ def main() -> int:
 
     try:
         configure_network(args.env_file)
+        print(f"[INFO] ETH RPC endpoint: {ETH_RPC_URL}")
         if args.manual_wallets:
             wallets = parse_manual_wallets(args.manual_wallets)
             return process_wallets(wallets, args.output, args.delay_seconds)
