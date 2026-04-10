@@ -36,6 +36,7 @@ DEFAULT_PROXY_ENABLED = False
 PROXY_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "proxies.txt"))
 MAX_PROXY_ATTEMPTS = 3
 DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
+DEFAULT_DELAY_SECONDS = 0.2
 
 NETWORK_OPENER: urllib.request.OpenerDirector | None = None
 PROXY_ROTATOR: "ProxyRotator | None" = None
@@ -176,6 +177,18 @@ def parse_bool_env(value: str | None, *, default: bool = False) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"Invalid boolean value: {value!r}")
+
+
+def parse_non_negative_float(value: str | None, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"Invalid float value: {value!r}") from exc
+    if parsed < 0:
+        raise ValueError(f"Float value must be >= 0: {value!r}")
+    return parsed
 
 
 def build_proxy_url(proxy_raw: str) -> str:
@@ -499,8 +512,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--delay-seconds",
         type=float,
-        default=0.0,
-        help="Optional delay between requests to reduce API rate-limit pressure",
+        default=None,
+        help=(
+            "Optional delay between wallet checks to reduce API rate-limit pressure. "
+            "Defaults to RECOVERY_BALANCE_CHECKER_DELAY_SECONDS or 0.2."
+        ),
     )
     return parser
 
@@ -511,14 +527,28 @@ def main() -> int:
 
     try:
         configure_network(args.env_file)
+        env_values = parse_env_file(args.env_file)
+        delay_seconds = (
+            args.delay_seconds
+            if args.delay_seconds is not None
+            else parse_non_negative_float(
+                os.environ.get("RECOVERY_BALANCE_CHECKER_DELAY_SECONDS")
+                or env_values.get("RECOVERY_BALANCE_CHECKER_DELAY_SECONDS"),
+                default=DEFAULT_DELAY_SECONDS,
+            )
+        )
+        if delay_seconds < 0:
+            raise ValueError("--delay-seconds must be >= 0")
+
         print(f"[INFO] ETH RPC endpoint: {ETH_RPC_URL}")
+        print(f"[INFO] Checker delay between wallets: {delay_seconds} sec")
         if args.manual_wallets:
             wallets = parse_manual_wallets(args.manual_wallets)
-            return process_wallets(wallets, args.output, args.delay_seconds)
+            return process_wallets(wallets, args.output, delay_seconds)
 
         conn, table = resolve_config(args.postgres_conn, args.postgres_table, args.env_file)
         wallets = fetch_rows(conn, table)
-        return process_wallets(wallets, args.output, args.delay_seconds, conn=conn, table=table)
+        return process_wallets(wallets, args.output, delay_seconds, conn=conn, table=table)
     except Exception as exc:  # noqa: BLE001 - command-line entrypoint
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
