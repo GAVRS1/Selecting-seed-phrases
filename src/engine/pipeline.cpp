@@ -4,6 +4,7 @@
 #include "core/thread_pool.hpp"
 
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 
 #include <fstream>
 #include <iostream>
@@ -68,6 +69,46 @@ core::SecureBuffer mnemonic_to_seed(const core::Mnemonic& mnemonic, const std::s
     }
 
     return core::SecureBuffer(std::move(seed));
+}
+
+core::SecureBuffer ton_mnemonic_to_private_key_seed(const core::Mnemonic& mnemonic, const std::string& password) {
+    std::ostringstream joined;
+    for (std::size_t i = 0; i < mnemonic.size(); ++i) {
+        joined << mnemonic[i];
+        if (i + 1 < mnemonic.size()) {
+            joined << ' ';
+        }
+    }
+
+    const std::string phrase = joined.str();
+    std::vector<std::uint8_t> entropy(64, 0);
+    unsigned int entropy_len = static_cast<unsigned int>(entropy.size());
+    HMAC(EVP_sha512(),
+         phrase.data(),
+         static_cast<int>(phrase.size()),
+         reinterpret_cast<const std::uint8_t*>(password.data()),
+         password.size(),
+         entropy.data(),
+         &entropy_len);
+    if (entropy_len != entropy.size()) {
+        throw std::runtime_error("Failed to derive TON mnemonic entropy");
+    }
+
+    std::vector<std::uint8_t> seed(64, 0);
+    static constexpr char kTonDefaultSeed[] = "TON default seed";
+    const int ok = PKCS5_PBKDF2_HMAC(reinterpret_cast<const char*>(entropy.data()),
+                                     static_cast<int>(entropy.size()),
+                                     reinterpret_cast<const unsigned char*>(kTonDefaultSeed),
+                                     static_cast<int>(sizeof(kTonDefaultSeed) - 1),
+                                     100000,
+                                     EVP_sha512(),
+                                     static_cast<int>(seed.size()),
+                                     seed.data());
+    if (ok != 1) {
+        throw std::runtime_error("Failed to derive TON seed");
+    }
+
+    return core::SecureBuffer(std::vector<std::uint8_t>(seed.begin(), seed.begin() + 32));
 }
 
 std::vector<std::string> paths_for_module(const core::AppConfig& cfg, const std::string& name) {
@@ -531,7 +572,11 @@ void Pipeline::run() {
                     continue;
                 }
                 auto paths = paths_for_module(config_, module->name());
-                futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
+                core::SecureBuffer module_seed = seed;
+                if (module->name() == "ton") {
+                    module_seed = ton_mnemonic_to_private_key_seed(mnemonic, config_.bip39_passphrase);
+                }
+                futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = module_seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     if (matcher_.has_targets()) {
                         for (const auto& address : derived) {
