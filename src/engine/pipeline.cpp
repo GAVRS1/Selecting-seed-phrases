@@ -344,14 +344,16 @@ void Pipeline::print_console_header() {
     }
 
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << "WALLET || ADDRESS || SEED (12 WORDS)\n";
+    std::cout << "# || WALLET || ADDRESS || SEED (12 WORDS)\n";
 }
 
 void Pipeline::print_console_row(const std::string& chain_name,
                                  const std::string& address,
                                  const std::string& mnemonic_words) {
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << chain_name << " || " << address << " || " << mnemonic_words << '\n';
+    ++console_wallet_counter_;
+    std::cout << console_wallet_counter_ << " || " << chain_name << " || " << address << " || " << mnemonic_words
+              << '\n';
 }
 
 bool Pipeline::wallet_record_exists(const std::string& chain_name,
