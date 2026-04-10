@@ -55,7 +55,7 @@ echo [2/3] Building project...
 cmake --build build --config Release
 if errorlevel 1 goto :error
 
-echo [3/3] Running recovery + separate Python balance checker...
+echo [3/3] Running recovery launchers...
 if not exist ".env" (
   echo Missing .env file. Copy .env.example to .env and set RECOVERY_POSTGRES_CONN.
   goto :error
@@ -76,6 +76,7 @@ set "RECOVERY_CONSOLES_BTC=1"
 set "RECOVERY_CONSOLES_ETH=1"
 set "RECOVERY_CONSOLES_SOL=1"
 set "RECOVERY_CONSOLES_TON=1"
+set "RECOVERY_RUN_BALANCE_CHECKER=true"
 
 call :load_env_value RECOVERY_ENABLE_BTC
 call :load_env_value RECOVERY_ENABLE_ETH
@@ -85,11 +86,13 @@ call :load_env_value RECOVERY_CONSOLES_BTC
 call :load_env_value RECOVERY_CONSOLES_ETH
 call :load_env_value RECOVERY_CONSOLES_SOL
 call :load_env_value RECOVERY_CONSOLES_TON
+call :load_env_value RECOVERY_RUN_BALANCE_CHECKER
 
 call :normalize_bool RECOVERY_ENABLE_BTC
 call :normalize_bool RECOVERY_ENABLE_ETH
 call :normalize_bool RECOVERY_ENABLE_SOL
 call :normalize_bool RECOVERY_ENABLE_TON
+call :normalize_bool RECOVERY_RUN_BALANCE_CHECKER
 
 call :normalize_count RECOVERY_CONSOLES_BTC
 if errorlevel 1 goto :error
@@ -124,7 +127,16 @@ if "%STARTED_CONSOLES%"=="0" (
   echo No recovery consoles started: all chains are disabled or have zero console count.
 )
 
-start "Python balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --output recovered_wallets.txt --delay-seconds 0.2"
+if /i "%RECOVERY_RUN_BALANCE_CHECKER%"=="true" (
+  if exist "run_checker.bat" (
+    call run_checker.bat
+  ) else (
+    echo run_checker.bat was not found, cannot start balance checker.
+    goto :error
+  )
+) else (
+  echo Python balance checker launch skipped: RECOVERY_RUN_BALANCE_CHECKER=%RECOVERY_RUN_BALANCE_CHECKER%.
+)
 
 echo.
 echo Recovery consoles started: %STARTED_CONSOLES%.
@@ -144,7 +156,7 @@ set "ENV_KEY=%~1"
 for /f "usebackq tokens=1* delims==" %%A in (`findstr /b /c:"%ENV_KEY%=" ".env"`) do (
   set "ENV_RAW=%%B"
   if defined ENV_RAW (
-    if "!ENV_RAW:~0,1!"=="^"" if "!ENV_RAW:~-1!"=="^"" set "ENV_RAW=!ENV_RAW:~1,-1!"
+    if "!ENV_RAW:~0,1!"=="^\"" if "!ENV_RAW:~-1!"=="^\"" set "ENV_RAW=!ENV_RAW:~1,-1!"
   )
   set "%ENV_KEY%=!ENV_RAW!"
   goto :eof
