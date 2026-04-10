@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import time
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,6 +32,11 @@ from typing import Iterable
 HTTP_TIMEOUT_SECONDS = 20
 PSQL_BIN = os.environ.get("PSQL_BIN", "psql")
 DEFAULT_PROXY_ENABLED = False
+PROXY_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "proxies.txt"))
+MAX_PROXY_ATTEMPTS = 3
+
+NETWORK_OPENER: urllib.request.OpenerDirector | None = None
+PROXY_ROTATOR: "ProxyRotator | None" = None
 
 
 @dataclass(frozen=True)
@@ -144,14 +150,14 @@ def request_json(url: str, payload: dict | None = None) -> dict:
         headers["Content-Type"] = "application/json"
 
     req = urllib.request.Request(url=url, data=data, headers=headers, method="POST" if payload is not None else "GET")
-    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
+    with open_url(req) as response:
         body = response.read().decode("utf-8", errors="replace")
     return json.loads(body)
 
 
 def request_text(url: str) -> str:
     req = urllib.request.Request(url=url, method="GET")
-    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as response:
+    with open_url(req) as response:
         return response.read().decode("utf-8", errors="replace").strip()
 
 
@@ -186,7 +192,89 @@ def build_proxy_url(proxy_raw: str) -> str:
     return f"http://{username}:{password}@{host}:{port}"
 
 
+def load_proxy_urls(path: str) -> list[str]:
+    if not os.path.isfile(path):
+        raise ValueError(f"Proxy file not found: {path}")
+
+    proxies: list[str] = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for line_no, raw_line in enumerate(handle, start=1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                proxies.append(build_proxy_url(line))
+            except ValueError as exc:
+                raise ValueError(f"Invalid proxy at {path}:{line_no}: {exc}") from exc
+
+    if not proxies:
+        raise ValueError(f"Proxy file is empty: {path}")
+    return proxies
+
+
+class ProxyRotator:
+    def __init__(self, proxies: list[str]) -> None:
+        self._proxies = proxies
+        self._index = 0
+        self._current_opener = self._make_opener(self._proxies[self._index])
+
+    @staticmethod
+    def _make_opener(proxy_url: str) -> urllib.request.OpenerDirector:
+        handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        return urllib.request.build_opener(handler)
+
+    def current_opener(self) -> urllib.request.OpenerDirector:
+        return self._current_opener
+
+    def current_proxy(self) -> str:
+        return self._proxies[self._index]
+
+    def rotate(self) -> str:
+        self._index = (self._index + 1) % len(self._proxies)
+        self._current_opener = self._make_opener(self._proxies[self._index])
+        return self.current_proxy()
+
+    def size(self) -> int:
+        return len(self._proxies)
+
+
+def should_rotate_proxy(exc: Exception) -> bool:
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return True
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code >= 500 or exc.code == 429
+    if isinstance(exc, urllib.error.URLError):
+        return True
+    return False
+
+
+def open_url(req: urllib.request.Request):
+    global NETWORK_OPENER, PROXY_ROTATOR  # noqa: PLW0603
+    attempts = 1
+    if PROXY_ROTATOR is not None:
+        attempts = min(PROXY_ROTATOR.size(), MAX_PROXY_ATTEMPTS)
+
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            if NETWORK_OPENER is not None:
+                return NETWORK_OPENER.open(req, timeout=HTTP_TIMEOUT_SECONDS)
+            return urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS)
+        except Exception as exc:  # noqa: BLE001 - normalized retry for network path
+            last_exc = exc
+            if PROXY_ROTATOR is None or not should_rotate_proxy(exc) or attempt == attempts:
+                raise
+            next_proxy = PROXY_ROTATOR.rotate()
+            NETWORK_OPENER = PROXY_ROTATOR.current_opener()
+            print(f"[WARN] Request failed via proxy, switching to next proxy: {next_proxy}")
+
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Unexpected network request state")
+
+
 def configure_network(env_file: str) -> None:
+    global NETWORK_OPENER, PROXY_ROTATOR  # noqa: PLW0603
     env_values = parse_env_file(env_file)
     proxy_enabled = parse_bool_env(
         os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED")
@@ -196,17 +284,10 @@ def configure_network(env_file: str) -> None:
     if not proxy_enabled:
         return
 
-    proxy_raw = os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY") or env_values.get("RECOVERY_BALANCE_CHECKER_PROXY")
-    if not proxy_raw:
-        raise ValueError(
-            "RECOVERY_BALANCE_CHECKER_PROXY_ENABLED=true but RECOVERY_BALANCE_CHECKER_PROXY is empty. "
-            "Expected host:port or host:port:username:password."
-        )
-
-    proxy_url = build_proxy_url(proxy_raw)
-    proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
-    urllib.request.install_opener(urllib.request.build_opener(proxy_handler))
-    print("[INFO] Proxy is enabled for balance checker requests.")
+    proxy_urls = load_proxy_urls(PROXY_FILE_PATH)
+    PROXY_ROTATOR = ProxyRotator(proxy_urls)
+    NETWORK_OPENER = PROXY_ROTATOR.current_opener()
+    print(f"[INFO] Proxy is enabled for balance checker requests. Loaded proxies: {len(proxy_urls)}")
 
 
 def format_decimal(value: Decimal, *, precision: int = 18) -> str:

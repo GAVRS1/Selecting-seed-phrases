@@ -193,11 +193,13 @@ python3 scripts/check_wallet_balances.py \
 Прокси для Python-чекера (только `scripts/check_wallet_balances.py`):
 
 - `RECOVERY_BALANCE_CHECKER_PROXY_ENABLED=true|false` — включить/выключить использование прокси.
-- `RECOVERY_BALANCE_CHECKER_PROXY` — прокси в формате:
+- Список прокси читается из файла `data/proxies.txt`.
+- Поддерживаемый формат каждой строки:
   - `host:port`
   - `host:port:username:password` (пример: `45.147.1.168:64136:Bb7w2GCL:7rxvC2AW`)
+- При неудачном запросе checker автоматически переключается на следующий прокси из списка.
 
-Если прокси включён, но значение `RECOVERY_BALANCE_CHECKER_PROXY` не задано или имеет неверный формат, скрипт завершится с ошибкой.
+Если прокси включён, но файл `data/proxies.txt` отсутствует, пустой или содержит неверный формат, скрипт завершится с ошибкой.
 
 ## Manual wallet check mode
 
@@ -263,7 +265,6 @@ RECOVERY_RUN_BALANCE_CHECKER=true
 
 # Proxy settings only for scripts/check_wallet_balances.py.
 RECOVERY_BALANCE_CHECKER_PROXY_ENABLED=false
-RECOVERY_BALANCE_CHECKER_PROXY=
 ```
 
 - Если `RECOVERY_ENABLE_<CHAIN>=false`, эта сеть не запускается.
