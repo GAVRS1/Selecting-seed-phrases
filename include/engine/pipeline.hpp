@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <mutex>
 #include <string>
@@ -40,6 +41,7 @@ private:
     mutable std::mutex postgres_mutex_;
     mutable std::mutex wallet_cache_mutex_;
     std::atomic<bool> console_header_printed_{false};
+    std::uint64_t console_wallet_counter_{0};
     mutable std::unordered_set<std::string> known_wallet_records_;
 
     bool is_chain_recovered(const std::string& chain_name);
