@@ -62,6 +62,7 @@ if not exist ".env" (
 )
 
 set "TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
+set "TON_TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*"
 set "MAX_CANDIDATES=0"
 set "THREADS=8"
 set "SCAN_LIMIT=20"
@@ -205,8 +206,13 @@ if "%CHAIN_COUNT%"=="0" (
   goto :eof
 )
 
+set "CHAIN_TEMPLATE=%TEMPLATE%"
+if /i "%CHAIN_NAME%"=="ton" (
+  set "CHAIN_TEMPLATE=%TON_TEMPLATE%"
+)
+
 for /l %%i in (1,1,%CHAIN_COUNT%) do (
-  start "%CHAIN_NAME% recovery %%i" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "%CHAIN_NAME%" --bip39-passphrase "" --paths-%CHAIN_NAME% "%CHAIN_PATH%" --scan-limit %SCAN_LIMIT% --max-candidates %MAX_CANDIDATES% --threads %THREADS% --env-file ".env""
+  start "%CHAIN_NAME% recovery %%i" cmd /k ""%RECOVERY_EXE%" --template "%CHAIN_TEMPLATE%" --chains "%CHAIN_NAME%" --bip39-passphrase "" --paths-%CHAIN_NAME% "%CHAIN_PATH%" --scan-limit %SCAN_LIMIT% --max-candidates %MAX_CANDIDATES% --threads %THREADS% --env-file ".env""
   set /a STARTED_CONSOLES+=1
 )
 goto :eof

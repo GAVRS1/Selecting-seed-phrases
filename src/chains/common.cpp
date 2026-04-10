@@ -512,7 +512,7 @@ std::string ton_address_from_private(const std::array<std::uint8_t, 32>& private
 
     const auto hash = sha256(pub.data(), pub.size());
     std::array<std::uint8_t, 36> payload{};
-    payload[0] = 0x11; // bounceable, mainnet
+    payload[0] = 0x51; // non-bounceable, mainnet
     payload[1] = 0x00; // workchain 0
     std::copy(hash.begin(), hash.end(), payload.begin() + 2);
     const std::uint16_t crc = crc16_xmodem(payload.data(), 34);
@@ -574,6 +574,13 @@ std::vector<std::string> derive_ton_addresses(const core::SecureBuffer& seed,
                                               const std::vector<std::string>& derivation_paths,
                                               std::uint32_t account_scan_limit) {
     std::vector<std::string> out;
+    if (seed.size() == 32) {
+        std::array<std::uint8_t, 32> private_key{};
+        std::copy_n(seed.data(), private_key.size(), private_key.begin());
+        out.push_back(ton_address_from_private(private_key));
+        return out;
+    }
+
     for (const auto& raw_path : derivation_paths) {
         for (std::uint32_t i = 0; i < account_scan_limit; ++i) {
             auto path = parse_path(raw_path, i);
