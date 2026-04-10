@@ -122,6 +122,7 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 > - If `--postgres-conn` is set, wallet records are written to PostgreSQL instead of TXT.
 > - If `--postgres-conn` is not passed, the app reads `RECOVERY_POSTGRES_CONN` and `RECOVERY_POSTGRES_TABLE` from `--env-file` (default: `.env`) and then from process environment variables.
 > - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
+> - TON target addresses can be provided both in raw format (`0:...`) and user-friendly base64url format (`EQ...` / `UQ...`); matcher normalizes both forms automatically.
 
 ## PostgreSQL: `.env` + migrations
 
