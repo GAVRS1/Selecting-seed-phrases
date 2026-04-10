@@ -169,9 +169,9 @@ If you need another table name, set `RECOVERY_POSTGRES_TABLE` in `.env` or use `
 1. Берёт кошельки из таблицы PostgreSQL (`id, blockchain, address, mnemonic`).
 2. Проверяет баланс по сети (`btc`, `eth`, `sol`, `ton`).
 3. Для каждого успешно проверенного кошелька сначала печатает в консоль строку:
-   `blockchain/address/balance/mnemonic`.
-4. Если баланс больше нуля — добавляет строку в `recovered_wallets.txt` в формате:
-   `blockchain/address/mnemonic`.
+   `blockchain/address/mnemonic/balance`.
+4. Если баланс больше нуля (или для ETH есть ERC-20 токены) — добавляет строку в `recovered_wallets.txt` в формате:
+   `blockchain/address/mnemonic(или test)/balance`.
 5. После успешной проверки удаляет запись из БД **в любом случае** (и при нулевом, и при ненулевом балансе).
 6. Если баланс не удалось проверить из-за ошибки API/сети, запись не удаляется (чтобы не потерять данные).
 
