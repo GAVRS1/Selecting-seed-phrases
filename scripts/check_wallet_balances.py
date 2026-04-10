@@ -34,9 +34,11 @@ PSQL_BIN = os.environ.get("PSQL_BIN", "psql")
 DEFAULT_PROXY_ENABLED = False
 PROXY_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "proxies.txt"))
 MAX_PROXY_ATTEMPTS = 3
+DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
 
 NETWORK_OPENER: urllib.request.OpenerDirector | None = None
 PROXY_ROTATOR: "ProxyRotator | None" = None
+ETH_RPC_URL: str = DEFAULT_ETH_RPC_URL
 
 
 @dataclass(frozen=True)
@@ -144,7 +146,10 @@ def parse_manual_wallets(path: str) -> list[WalletRow]:
 
 def request_json(url: str, payload: dict | None = None) -> dict:
     data = None
-    headers = {}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "curl/8.0.1",
+    }
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -274,8 +279,13 @@ def open_url(req: urllib.request.Request):
 
 
 def configure_network(env_file: str) -> None:
-    global NETWORK_OPENER, PROXY_ROTATOR  # noqa: PLW0603
+    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL  # noqa: PLW0603
     env_values = parse_env_file(env_file)
+    ETH_RPC_URL = (
+        os.environ.get("RECOVERY_ETH_RPC_URL")
+        or env_values.get("RECOVERY_ETH_RPC_URL")
+        or DEFAULT_ETH_RPC_URL
+    )
     proxy_enabled = parse_bool_env(
         os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED")
         or env_values.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED"),
@@ -313,7 +323,7 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
         "params": [address, "latest"],
         "id": 1,
     }
-    result = request_json("https://ethereum-rpc.publicnode.com", payload)
+    result = request_json(ETH_RPC_URL, payload)
     wei_hex = result.get("result")
     if not isinstance(wei_hex, str):
         raise RuntimeError(f"Unexpected ETH RPC response: {result}")
@@ -322,9 +332,16 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
 
     # Also check ERC-20 token balances via Ethplorer public endpoint
     # so non-ETH token holdings are not missed.
-    token_info = request_json(
-        f"https://api.ethplorer.io/getAddressInfo/{urllib.parse.quote(address)}?apiKey=freekey"
-    )
+    token_info: dict = {}
+    try:
+        token_info = request_json(
+            f"https://api.ethplorer.io/getAddressInfo/{urllib.parse.quote(address)}?apiKey=freekey"
+        )
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            print(f"[WARN] Ethplorer returned HTTP 403 for {address}. Continue with native ETH balance only.")
+        else:
+            raise
     token_chunks: list[str] = []
     for token in token_info.get("tokens", []) or []:
         token_balance_raw = token.get("balance")
@@ -484,6 +501,7 @@ def main() -> int:
 
     try:
         configure_network(args.env_file)
+        print(f"[INFO] ETH RPC endpoint: {ETH_RPC_URL}")
         if args.manual_wallets:
             wallets = parse_manual_wallets(args.manual_wallets)
             return process_wallets(wallets, args.output, args.delay_seconds)
