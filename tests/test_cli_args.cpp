@@ -73,13 +73,10 @@ int main() {
             argv.push_back(item.data());
         }
 
-        bool threw = false;
-        try {
-            static_cast<void>(cli::parse_args(static_cast<int>(argv.size()), argv.data()));
-        } catch (const std::invalid_argument&) {
-            threw = true;
-        }
-        assert(threw);
+        const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
+        assert(cfg.template_words.size() == 12);
+        assert(cfg.chains.size() == 1);
+        assert(cfg.chains[0] == "ton");
     }
 
     {

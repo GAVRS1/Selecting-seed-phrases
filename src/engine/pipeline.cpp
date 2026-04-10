@@ -568,9 +568,6 @@ void Pipeline::run() {
                 if (is_chain_recovered(module->name())) {
                     continue;
                 }
-                if (module->name() == "ton" && mnemonic.size() != 24) {
-                    continue;
-                }
                 auto paths = paths_for_module(config_, module->name());
                 core::SecureBuffer module_seed = seed;
                 if (module->name() == "ton") {

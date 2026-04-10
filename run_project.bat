@@ -62,7 +62,7 @@ if not exist ".env" (
 )
 
 set "TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
-set "TON_TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*,*"
+set "TON_TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
 set "MAX_CANDIDATES=0"
 set "THREADS=8"
 set "SCAN_LIMIT=20"
