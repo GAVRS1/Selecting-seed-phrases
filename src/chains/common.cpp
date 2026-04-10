@@ -383,6 +383,41 @@ std::string bytes_to_hex(const std::uint8_t* data, std::size_t len) {
     return ss.str();
 }
 
+std::uint16_t crc16_xmodem(const std::uint8_t* data, std::size_t len) {
+    std::uint16_t crc = 0x0000;
+    for (std::size_t i = 0; i < len; ++i) {
+        crc ^= static_cast<std::uint16_t>(data[i]) << 8;
+        for (int bit = 0; bit < 8; ++bit) {
+            if ((crc & 0x8000) != 0) {
+                crc = static_cast<std::uint16_t>((crc << 1) ^ 0x1021);
+            } else {
+                crc = static_cast<std::uint16_t>(crc << 1);
+            }
+        }
+    }
+    return crc;
+}
+
+std::string base64_encode(const std::uint8_t* data, std::size_t len) {
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((len + 2) / 3) * 4);
+
+    for (std::size_t i = 0; i < len; i += 3) {
+        const std::uint32_t b0 = data[i];
+        const std::uint32_t b1 = i + 1 < len ? data[i + 1] : 0;
+        const std::uint32_t b2 = i + 2 < len ? data[i + 2] : 0;
+        const std::uint32_t chunk = (b0 << 16) | (b1 << 8) | b2;
+
+        out.push_back(kAlphabet[(chunk >> 18) & 0x3f]);
+        out.push_back(kAlphabet[(chunk >> 12) & 0x3f]);
+        out.push_back(i + 1 < len ? kAlphabet[(chunk >> 6) & 0x3f] : '=');
+        out.push_back(i + 2 < len ? kAlphabet[chunk & 0x3f] : '=');
+    }
+    return out;
+}
+
 std::string eth_checksum_address(const std::array<std::uint8_t, 20>& address_bytes) {
     const std::string lower_hex = bytes_to_hex(address_bytes.data(), address_bytes.size());
     const auto hash = keccak256(reinterpret_cast<const std::uint8_t*>(lower_hex.data()), lower_hex.size());
@@ -476,7 +511,14 @@ std::string ton_address_from_private(const std::array<std::uint8_t, 32>& private
     }
 
     const auto hash = sha256(pub.data(), pub.size());
-    return "0:" + bytes_to_hex(hash.data(), hash.size());
+    std::array<std::uint8_t, 36> payload{};
+    payload[0] = 0x11; // bounceable, mainnet
+    payload[1] = 0x00; // workchain 0
+    std::copy(hash.begin(), hash.end(), payload.begin() + 2);
+    const std::uint16_t crc = crc16_xmodem(payload.data(), 34);
+    payload[34] = static_cast<std::uint8_t>((crc >> 8) & 0xff);
+    payload[35] = static_cast<std::uint8_t>(crc & 0xff);
+    return base64_encode(payload.data(), payload.size());
 }
 
 } // namespace

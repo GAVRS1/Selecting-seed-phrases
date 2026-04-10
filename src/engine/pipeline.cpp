@@ -527,6 +527,9 @@ void Pipeline::run() {
                 if (is_chain_recovered(module->name())) {
                     continue;
                 }
+                if (module->name() == "ton" && mnemonic.size() != 24) {
+                    continue;
+                }
                 auto paths = paths_for_module(config_, module->name());
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = seed, mnemonic_words]() mutable {
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
