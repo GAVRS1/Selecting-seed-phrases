@@ -4,4 +4,4 @@
 # host:port:username:password
 
 # Example:
-# 45.147.1.168:64136:Bb7w2GCL:7rxvC2AW
+# 0.0.1.168:0136:text:text
