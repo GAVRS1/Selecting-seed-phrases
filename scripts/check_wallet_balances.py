@@ -229,8 +229,8 @@ def process_wallets(
     db_mode = conn is not None and table is not None
     print(f"Loaded wallets: {len(wallets)}")
 
-    deleted_ids: list[int] = []
     recovered_count = 0
+    deleted_count = 0
 
     for wallet in wallets:
         try:
@@ -252,14 +252,12 @@ def process_wallets(
             else:
                 print("[SKIP] zero balance")
 
-        if wallet.row_id is not None:
-            deleted_ids.append(wallet.row_id)
+        if db_mode and wallet.row_id is not None:
+            delete_rows(conn, table, [wallet.row_id])
+            deleted_count += 1
         if delay_seconds > 0:
             time.sleep(delay_seconds)
 
-    deleted_count = 0
-    if db_mode:
-        deleted_count = delete_rows(conn, table, deleted_ids)
     print(f"Recovered non-empty wallets: {recovered_count}")
     if db_mode:
         print(f"Deleted rows from DB: {deleted_count}")
