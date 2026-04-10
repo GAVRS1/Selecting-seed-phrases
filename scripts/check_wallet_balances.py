@@ -15,6 +15,7 @@ Rows whose balances cannot be checked (API/network error) are not deleted in Pos
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import re
@@ -246,6 +247,8 @@ class ProxyRotator:
 def should_rotate_proxy(exc: Exception) -> bool:
     if isinstance(exc, (socket.timeout, TimeoutError)):
         return True
+    if isinstance(exc, http.client.RemoteDisconnected):
+        return True
     if isinstance(exc, urllib.error.HTTPError):
         return exc.code >= 500 or exc.code == 429
     if isinstance(exc, urllib.error.URLError):
@@ -436,7 +439,14 @@ def process_wallets(
     for wallet in wallets:
         try:
             check = fetch_balance(wallet.blockchain, wallet.address)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            http.client.RemoteDisconnected,
+            json.JSONDecodeError,
+            ValueError,
+            RuntimeError,
+        ) as exc:
             wallet_ref = f"id={wallet.row_id} " if wallet.row_id is not None else ""
             print(f"[WARN] Skip {wallet_ref}{wallet.blockchain}:{wallet.address} due to: {exc}")
             continue
