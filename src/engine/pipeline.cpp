@@ -344,7 +344,7 @@ void Pipeline::print_console_header() {
     }
 
     std::lock_guard<std::mutex> lock(console_mutex_);
-    std::cout << "# || WALLET || ADDRESS || SEED (12 WORDS)\n";
+    std::cout << "# || WALLET || ADDRESS || SEED\n";
 }
 
 void Pipeline::print_console_row(const std::string& chain_name,
@@ -525,6 +525,9 @@ void Pipeline::run() {
 
             for (const auto& module : modules_) {
                 if (is_chain_recovered(module->name())) {
+                    continue;
+                }
+                if (module->name() == "ton" && mnemonic.size() != 24) {
                     continue;
                 }
                 auto paths = paths_for_module(config_, module->name());
