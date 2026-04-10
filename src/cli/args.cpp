@@ -131,8 +131,6 @@ core::AppConfig parse_args(int argc, char** argv) {
             postgres_table_set_by_cli = true;
         } else if (arg == "--env-file" && i + 1 < argc) {
             cfg.env_file_path = argv[++i];
-        } else if (arg == "--seen-mnemonics" && i + 1 < argc) {
-            cfg.seen_mnemonics_path = argv[++i];
         } else if (arg == "--manual-wallets" && i + 1 < argc) {
             cfg.manual_wallets_path = argv[++i];
         } else if (arg == "--bip39-passphrase" && i + 1 < argc) {
