@@ -5,8 +5,8 @@ Workflow:
 1. Read wallet records from PostgreSQL table (`blockchain`, `address`, `mnemonic`)
    or from `manual_wallets.txt`.
 2. Query on-chain balances by blockchain.
-3. Print `blockchain/address/balance/mnemonic` to console for each successfully checked wallet.
-4. If balance > 0, append `blockchain/address/mnemonic` to recovered_wallets.txt.
+3. Print `blockchain/address/mnemonic/balance` to console for each successfully checked wallet.
+4. If balance/assets > 0, append `blockchain/address/mnemonic_or_test/balance` to recovered_wallets.txt.
 5. In PostgreSQL mode, delete processed wallet rows from DB in both zero and non-zero balance cases.
 
 Rows whose balances cannot be checked (API/network error) are not deleted in PostgreSQL mode.
@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from decimal import Decimal
@@ -37,6 +38,13 @@ class WalletRow:
     blockchain: str
     address: str
     mnemonic: str
+
+
+@dataclass(frozen=True)
+class BalanceCheckResult:
+    amount: Decimal
+    display: str
+    has_assets: bool
 
 
 def parse_env_file(path: str) -> dict[str, str]:
@@ -146,24 +154,62 @@ def request_text(url: str) -> str:
         return response.read().decode("utf-8", errors="replace").strip()
 
 
+def format_decimal(value: Decimal, *, precision: int = 18) -> str:
+    quantized = value.quantize(Decimal(1).scaleb(-precision)).normalize()
+    return format(quantized, "f")
+
+
 def balance_btc(address: str) -> Decimal:
-    satoshis = Decimal(request_text(f"https://blockchain.info/q/addressbalance/{address}"))
-    return satoshis / Decimal("100000000")
+    payload = request_json(f"https://blockstream.info/api/address/{address}")
+    chain = payload.get("chain_stats", {})
+    mempool = payload.get("mempool_stats", {})
+
+    funded = int(chain.get("funded_txo_sum", 0)) + int(mempool.get("funded_txo_sum", 0))
+    spent = int(chain.get("spent_txo_sum", 0)) + int(mempool.get("spent_txo_sum", 0))
+    satoshis = funded - spent
+    return Decimal(satoshis) / Decimal("100000000")
 
 
-def balance_eth(address: str) -> Decimal:
+def balance_eth(address: str) -> tuple[Decimal, str, bool]:
     payload = {
         "jsonrpc": "2.0",
         "method": "eth_getBalance",
         "params": [address, "latest"],
         "id": 1,
     }
-    result = request_json("https://cloudflare-eth.com", payload)
+    result = request_json("https://ethereum-rpc.publicnode.com", payload)
     wei_hex = result.get("result")
     if not isinstance(wei_hex, str):
         raise RuntimeError(f"Unexpected ETH RPC response: {result}")
     wei = int(wei_hex, 16)
-    return Decimal(wei) / Decimal("1000000000000000000")
+    native_eth = Decimal(wei) / Decimal("1000000000000000000")
+
+    # Also check ERC-20 token balances via Ethplorer public endpoint
+    # so non-ETH token holdings are not missed.
+    token_info = request_json(
+        f"https://api.ethplorer.io/getAddressInfo/{urllib.parse.quote(address)}?apiKey=freekey"
+    )
+    token_chunks: list[str] = []
+    for token in token_info.get("tokens", []) or []:
+        token_balance_raw = token.get("balance")
+        token_meta = token.get("tokenInfo", {})
+        if token_balance_raw in (None, ""):
+            continue
+        decimals_raw = token_meta.get("decimals")
+        symbol = token_meta.get("symbol") or token_meta.get("name") or "TOKEN"
+        try:
+            decimals = int(decimals_raw) if decimals_raw not in (None, "") else 0
+            token_amount = Decimal(str(token_balance_raw)) / (Decimal(10) ** decimals)
+        except Exception:
+            continue
+        if token_amount > 0:
+            token_chunks.append(f"{symbol}:{format_decimal(token_amount, precision=8)}")
+
+    eth_display = f"ETH:{format_decimal(native_eth, precision=8)}"
+    has_token_assets = bool(token_chunks)
+    if has_token_assets:
+        eth_display += " | TOKENS:" + ",".join(token_chunks)
+    return native_eth, eth_display, native_eth > 0 or has_token_assets
 
 
 def balance_sol(address: str) -> Decimal:
@@ -188,24 +234,26 @@ def balance_ton(address: str) -> Decimal:
     return Decimal(str(nanotons)) / Decimal("1000000000")
 
 
-def fetch_balance(blockchain: str, address: str) -> Decimal:
+def fetch_balance(blockchain: str, address: str) -> BalanceCheckResult:
     if blockchain == "btc":
-        return balance_btc(address)
+        amount = balance_btc(address)
+        return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=8), has_assets=amount > 0)
     if blockchain == "eth":
-        return balance_eth(address)
+        amount, display, has_assets = balance_eth(address)
+        return BalanceCheckResult(amount=amount, display=display, has_assets=has_assets)
     if blockchain == "sol":
-        return balance_sol(address)
+        amount = balance_sol(address)
+        return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=9), has_assets=amount > 0)
     if blockchain == "ton":
-        return balance_ton(address)
+        amount = balance_ton(address)
+        return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=9), has_assets=amount > 0)
     raise ValueError(f"Unsupported blockchain value: {blockchain}")
 
 
-def append_recovered(path: str, wallet: WalletRow) -> None:
+def append_recovered(path: str, wallet: WalletRow, balance_text: str) -> None:
+    mnemonic = wallet.mnemonic if wallet.mnemonic else "test"
     with open(path, "a", encoding="utf-8") as handle:
-        if wallet.mnemonic:
-            handle.write(f"{wallet.blockchain}/{wallet.address}/{wallet.mnemonic}\n")
-        else:
-            handle.write(f"{wallet.blockchain}/{wallet.address}\n")
+        handle.write(f"{wallet.blockchain}/{wallet.address}/{mnemonic}/{balance_text}\n")
 
 
 def delete_rows(conn: str, table: str, row_ids: Iterable[int]) -> int:
@@ -234,15 +282,16 @@ def process_wallets(
 
     for wallet in wallets:
         try:
-            balance = fetch_balance(wallet.blockchain, wallet.address)
+            check = fetch_balance(wallet.blockchain, wallet.address)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
             wallet_ref = f"id={wallet.row_id} " if wallet.row_id is not None else ""
             print(f"[WARN] Skip {wallet_ref}{wallet.blockchain}:{wallet.address} due to: {exc}")
             continue
 
-        print(f"{wallet.blockchain}/{wallet.address}/{balance}/{wallet.mnemonic}")
-        if balance > 0:
-            append_recovered(output_path, wallet)
+        mnemonic = wallet.mnemonic if wallet.mnemonic else "test"
+        print(f"{wallet.blockchain}/{wallet.address}/{mnemonic}/{check.display}")
+        if check.has_assets:
+            append_recovered(output_path, wallet, check.display)
             recovered_count += 1
             wallet_ref = f"id={wallet.row_id} " if wallet.row_id is not None else ""
             print(f"[WRITE] {wallet_ref}-> {output_path}")
