@@ -188,7 +188,7 @@ python3 scripts/check_wallet_balances.py \
 
 - `--postgres-conn` — строка подключения PostgreSQL (иначе берётся `RECOVERY_POSTGRES_CONN` из `.env`/env).
 - `--postgres-table` — имя таблицы (по умолчанию `recovered_wallets`).
-- `--delay-seconds` — задержка между запросами к API (полезно при rate-limit).
+- `--delay-seconds` — задержка между проверками кошельков (полезно при rate-limit). Если не задана, берётся `RECOVERY_BALANCE_CHECKER_DELAY_SECONDS` из `.env`/env, иначе используется `0.2`.
 - `--output` — путь к файлу для найденных непустых кошельков.
 
 Прокси для Python-чекера (только `scripts/check_wallet_balances.py`):
@@ -267,6 +267,9 @@ RECOVERY_RUN_BALANCE_CHECKER=true
 
 # Proxy settings only for scripts/check_wallet_balances.py.
 RECOVERY_BALANCE_CHECKER_PROXY_ENABLED=false
+
+# Delay between wallet checks for scripts/check_wallet_balances.py.
+RECOVERY_BALANCE_CHECKER_DELAY_SECONDS=0.2
 ```
 
 - Если `RECOVERY_ENABLE_<CHAIN>=false`, эта сеть не запускается.
