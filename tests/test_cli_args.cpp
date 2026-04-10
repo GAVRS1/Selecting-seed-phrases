@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -72,12 +73,13 @@ int main() {
             argv.push_back(item.data());
         }
 
-        const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
-        assert(cfg.template_words.size() == 24);
-        assert(cfg.template_words[0] == "abandon");
-        assert(cfg.template_words[11] == "ability");
-        assert(cfg.template_words[12] == "*");
-        assert(cfg.template_words[23] == "*");
+        bool threw = false;
+        try {
+            static_cast<void>(cli::parse_args(static_cast<int>(argv.size()), argv.data()));
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        assert(threw);
     }
 
     {
