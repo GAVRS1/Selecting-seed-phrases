@@ -78,14 +78,12 @@ def run_psql(conn: str, sql: str) -> str:
         sql_path = handle.name
 
     cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", sql_path]
-    result = subprocess.run(cmd, capture_output=True, text=False, check=False)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     try:
         os.unlink(sql_path)
     except OSError:
         pass
 
-    stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
-    stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
     if result.returncode != 0:
         raise RuntimeError(f"psql failed: {stderr.strip() or stdout.strip()}")
     return stdout
