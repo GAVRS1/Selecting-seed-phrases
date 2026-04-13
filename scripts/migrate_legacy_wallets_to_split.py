@@ -14,12 +14,10 @@ If DB write transaction fails, no deletions are performed.
 from __future__ import annotations
 
 import argparse
-import csv
 import os
 import re
 import subprocess
 import sys
-import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -80,14 +78,6 @@ def run_psql(conn: str, sql: str) -> str:
     return result.stdout
 
 
-def run_psql_file(conn: str, sql_file: str) -> str:
-    cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", sql_file]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        raise RuntimeError(f"psql failed: {result.stderr.strip() or result.stdout.strip()}")
-    return result.stdout
-
-
 def fetch_legacy_rows(conn: str, legacy_table: str, batch_size: int) -> list[LegacyRow]:
     sql = (
         f"SELECT id, created_at, blockchain, address, mnemonic FROM {legacy_table} "
@@ -123,20 +113,6 @@ def classify_chain(blockchain: str) -> str | None:
     if chain in {"sol", "solana"}:
         return "sol"
     return None
-
-
-def write_batch_tsv(rows: list[LegacyRow], output_path: str) -> None:
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(
-            handle,
-            delimiter="\t",
-            quotechar='"',
-            quoting=csv.QUOTE_MINIMAL,
-            lineterminator="\n",
-        )
-        for row in rows:
-            writer.writerow([row.row_id, row.blockchain, row.address, row.mnemonic])
 
 
 def export_xlsx(rows: list[LegacyRow], output_path: str) -> None:
@@ -187,24 +163,29 @@ def export_xlsx(rows: list[LegacyRow], output_path: str) -> None:
     wb.save(output_path)
 
 
-def to_psql_path(path: str) -> str:
-    return path.replace("\\", "/")
+def build_transfer_sql(rows: list[LegacyRow], legacy_table: str) -> str:
+    if not rows:
+        return ""
 
+    values = ",\n".join(
+        (
+            "("
+            f"{row.row_id}, "
+            f"{sql_literal(row.blockchain)}, "
+            f"{sql_literal(row.address)}, "
+            f"{sql_literal(row.mnemonic)}"
+            ")"
+        )
+        for row in rows
+    )
 
-def build_transfer_sql(legacy_table: str, batch_file_path: str) -> str:
-    batch_file_literal = sql_literal(to_psql_path(batch_file_path))
     return f"""
 BEGIN;
-CREATE TEMP TABLE tmp_batch (
-    id BIGINT NOT NULL,
-    blockchain TEXT NOT NULL,
-    address TEXT NOT NULL,
-    mnemonic TEXT NOT NULL
-) ON COMMIT DROP;
-
-\\copy tmp_batch (id, blockchain, address, mnemonic) FROM {batch_file_literal} WITH (FORMAT csv, DELIMITER E'\\t', QUOTE '\"', ESCAPE '\"');
-
-WITH classified AS (
+WITH batch(id, blockchain, address, mnemonic) AS (
+    VALUES
+    {values}
+),
+classified AS (
     SELECT
         id,
         blockchain,
@@ -216,7 +197,7 @@ WITH classified AS (
             WHEN lower(blockchain) IN ('sol', 'solana') THEN 'sol'
             ELSE NULL
         END AS target_chain
-    FROM tmp_batch
+    FROM batch
 )
 INSERT INTO seed_phrases_btc (mnemonic)
 SELECT DISTINCT mnemonic FROM classified WHERE target_chain = 'btc'
@@ -243,7 +224,7 @@ SELECT blockchain, address, mnemonic FROM classified WHERE target_chain = 'sol'
 ON CONFLICT (blockchain, address, mnemonic) DO NOTHING;
 
 DELETE FROM {legacy_table}
-WHERE id IN (SELECT id FROM tmp_batch);
+WHERE id IN (SELECT id FROM batch);
 COMMIT;
 """
 
@@ -297,16 +278,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             print("Dry-run enabled: DB transfer and deletion skipped.")
             return 0
 
-        with tempfile.TemporaryDirectory(prefix="legacy_wallet_migration_") as temp_dir:
-            batch_file_path = os.path.join(temp_dir, "batch.tsv")
-            transfer_sql_path = os.path.join(temp_dir, "transfer.sql")
-
-            write_batch_tsv(rows, batch_file_path)
-            transfer_sql = build_transfer_sql(legacy_table, batch_file_path)
-            with open(transfer_sql_path, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(transfer_sql)
-
-            run_psql_file(conn, transfer_sql_path)
+        transfer_sql = build_transfer_sql(rows, legacy_table)
+        run_psql(conn, transfer_sql)
 
         print(
             "Transferred and deleted rows from legacy table: "

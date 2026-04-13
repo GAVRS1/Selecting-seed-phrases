@@ -239,7 +239,6 @@ python3 scripts/migrate_legacy_wallets_to_split.py \
 
 - `--dry-run` — только сделать Excel и показать статистику, без переноса/удаления в БД.
 - `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
-- Для больших `--batch-size` используется временный TSV + `\copy`, чтобы избежать ошибки Windows `WinError 206` (слишком длинная командная строка).
 
 Windows быстрый запуск:
 
