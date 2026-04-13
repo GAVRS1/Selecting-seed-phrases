@@ -24,7 +24,7 @@ if "%EXCEL_OUTPUT%"=="" set "EXCEL_OUTPUT=legacy_wallets_export.xlsx"
 set "DRY_RUN_FLAG="
 if /i "%~3"=="dry-run" set "DRY_RUN_FLAG=--dry-run"
 
-echo Running legacy export + migration...
+echo Running legacy export to Excel + cleanup...
 echo Batch size: %BATCH_SIZE%
 echo Excel output: %EXCEL_OUTPUT%
 if defined DRY_RUN_FLAG echo Mode: DRY RUN (no DB changes)
@@ -33,7 +33,7 @@ if defined DRY_RUN_FLAG echo Mode: DRY RUN (no DB changes)
 if errorlevel 1 goto :error
 
 echo.
-echo Legacy export finished successfully.
+echo Legacy export and cleanup finished successfully.
 goto :end
 
 :error
