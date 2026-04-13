@@ -210,6 +210,49 @@ python3 scripts/check_wallet_balances.py \
 
 Если прокси включён, но файл `data/proxies.txt` отсутствует, пустой или содержит неверный формат, скрипт завершится с ошибкой.
 
+## Миграция legacy таблицы `recovered_wallets` в split-таблицы + Excel
+
+Добавлен скрипт `scripts/migrate_legacy_wallets_to_split.py` для старой схемы (первая миграция), где есть только одна таблица `recovered_wallets`.
+
+Что делает за один запуск:
+
+1. Берёт **все строки** из legacy-таблицы `recovered_wallets` (по `id`).
+2. Создаёт Excel-файл (`.xlsx`) со всеми строками и отдельными листами: `btc`, `evm`, `sol`, `unknown`.
+3. Переносит данные в новую split-схему:
+   - `seed_phrases_btc|evm|sol` (уникальные сид-фразы),
+   - `recovered_wallets_btc|evm|sol` (кошельки).
+4. Работает по одному кошельку: **перенёс кошелёк → удалил этот кошелёк** из `recovered_wallets` (коммит на каждую запись).
+5. Если `blockchain` не удалось отнести к `btc|evm|sol`, строка попадает в лист `unknown` и не удаляется из legacy-таблицы.
+
+Запуск:
+
+```bash
+python3 scripts/migrate_legacy_wallets_to_split.py \
+  --env-file .env \
+  --legacy-table recovered_wallets \
+  --excel-output ./legacy_export_batch_001.xlsx
+```
+
+Полезные флаги:
+
+- `--dry-run` — только сделать Excel и показать статистику, без переноса/удаления в БД.
+- `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
+- Для работы нужен PostgreSQL-драйвер Python: `psycopg` или `psycopg2-binary`.
+- Для Excel нужен `openpyxl`.
+
+Windows быстрый запуск:
+
+```bat
+run_legacy_export.bat [excel_output] [dry-run]
+```
+
+Примеры:
+
+```bat
+run_legacy_export.bat legacy_export_full.xlsx
+run_legacy_export.bat legacy_export_preview.xlsx dry-run
+```
+
 ## Manual wallet check mode
 
 Use this mode when you want to verify parser behavior on known addresses from a text file.
