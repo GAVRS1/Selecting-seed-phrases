@@ -2,9 +2,9 @@
 """Export rows from legacy recovered_wallets table to XLSX and then delete them.
 
 Behavior:
-1. Read rows from legacy table in batches (ordered by id).
-2. Build an Excel workbook with one sheet per blockchain group.
-3. If export succeeds, delete only the exported legacy rows from source table.
+1. Read all rows from legacy table in batches (ordered by id).
+2. Build an Excel workbook with sheet "all" + grouped sheets (btc/evm/sol/unknown).
+3. If (and only if) export succeeds, delete only exported rows from source table.
 
 If export fails, no deletions are performed.
 """
@@ -72,19 +72,6 @@ def run_psql(conn: str, sql: str) -> str:
         sql_path = handle.name
 
     cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", sql_path]
-    result = subprocess.run(cmd, capture_output=True, text=False, check=False)
-    try:
-        os.unlink(sql_path)
-    except OSError:
-        pass
-
-def run_psql(conn: str, sql: str) -> str:
-    """Run SQL via a temp file to avoid Windows command-length limits."""
-    with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False, encoding="utf-8") as handle:
-        handle.write(sql)
-        sql_path = handle.name
-
-    cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", sql_path]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     try:
         os.unlink(sql_path)
@@ -92,8 +79,10 @@ def run_psql(conn: str, sql: str) -> str:
         pass
 
     if result.returncode != 0:
+        stderr = result.stderr or ""
+        stdout = result.stdout or ""
         raise RuntimeError(f"psql failed: {stderr.strip() or stdout.strip()}")
-    return stdout
+    return result.stdout or ""
 
 
 def fetch_legacy_rows(conn: str, legacy_table: str, batch_size: int, after_id: int = 0) -> list[LegacyRow]:
@@ -194,6 +183,30 @@ COMMIT;
 """
 
 
+def chunked_ids(rows: list[LegacyRow], chunk_size: int = 5000) -> Iterable[list[int]]:
+    ids = [row.row_id for row in rows]
+    for start in range(0, len(ids), chunk_size):
+        yield ids[start : start + chunk_size]
+
+
+def delete_exported_rows(conn: str, legacy_table: str, rows: list[LegacyRow]) -> int:
+    deleted_total = 0
+    for id_chunk in chunked_ids(rows):
+        sql = f"""
+WITH deleted AS (
+    DELETE FROM {legacy_table}
+    WHERE id IN ({",".join(str(row_id) for row_id in id_chunk)})
+    RETURNING id
+)
+SELECT COUNT(*) FROM deleted;
+"""
+        output = run_psql(conn, sql).strip()
+        if not output or not output.isdigit():
+            raise RuntimeError(f"Unable to parse delete count for chunk: {output!r}")
+        deleted_total += int(output)
+    return deleted_total
+
+
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Export legacy recovered_wallets rows to Excel and delete exported rows from source table."
@@ -201,7 +214,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--env-file", default=".env", help="Path to .env file (default: .env)")
     parser.add_argument("--postgres-conn", default=None, help="PostgreSQL connection string")
     parser.add_argument("--legacy-table", default="recovered_wallets", help="Legacy source table")
-    parser.add_argument("--batch-size", type=int, default=1000, help="Rows to process in one run")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Rows to fetch per DB batch")
     parser.add_argument(
         "--excel-output",
         default=f"legacy_wallets_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx",
@@ -226,12 +239,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         legacy_table = validate_table_name(args.legacy_table)
         first_batch = fetch_legacy_rows(conn, legacy_table, args.batch_size)
         if not first_batch:
-            print("No rows found in legacy table; nothing to migrate.")
+            print("No rows found in legacy table; nothing to export.")
             return 0
 
         all_rows: list[LegacyRow] = []
         stats: dict[str, int] = {"btc": 0, "evm": 0, "sol": 0, "unknown": 0}
-        total_processed = 0
         batch_index = 0
         next_after_id = 0
 
@@ -245,14 +257,10 @@ def main(argv: Iterable[str] | None = None) -> int:
             for row in rows:
                 stats[classify_chain(row.blockchain) or "unknown"] += 1
 
-            if not args.dry_run:
-                transfer_sql = build_transfer_sql(rows, legacy_table)
-                run_psql(conn, transfer_sql)
-                total_processed += len(rows)
-                print(
-                    f"Batch {batch_index}: transferred/deleted {len(rows)} rows "
-                    f"(ids {rows[0].row_id}..{rows[-1].row_id})"
-                )
+            print(
+                f"Batch {batch_index}: fetched {len(rows)} rows "
+                f"(ids {rows[0].row_id}..{rows[-1].row_id})"
+            )
             next_after_id = rows[-1].row_id
 
         export_xlsx(all_rows, args.excel_output)
@@ -263,7 +271,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             print("Dry-run enabled: deletion skipped.")
             return 0
 
-        print(f"Transferred and deleted rows from legacy table: {total_processed}")
+        deleted_rows = delete_exported_rows(conn, legacy_table, all_rows)
+        print(f"Deleted rows from legacy table after successful export: {deleted_rows}")
         return 0
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)
