@@ -210,6 +210,50 @@ python3 scripts/check_wallet_balances.py \
 
 Если прокси включён, но файл `data/proxies.txt` отсутствует, пустой или содержит неверный формат, скрипт завершится с ошибкой.
 
+## Миграция legacy таблицы `recovered_wallets` в split-таблицы + Excel
+
+Добавлен скрипт `scripts/migrate_legacy_wallets_to_split.py` для старой схемы (первая миграция), где есть только одна таблица `recovered_wallets`.
+
+Что делает за один запуск:
+
+1. Берёт пачку строк из legacy-таблицы `recovered_wallets` (по `id`, через `--batch-size`).
+2. Создаёт Excel-файл (`.xlsx`) со всеми строками и отдельными листами: `btc`, `evm`, `sol`, `unknown`.
+3. Переносит данные в новую split-схему:
+   - `seed_phrases_btc|evm|sol` (уникальные сид-фразы),
+   - `recovered_wallets_btc|evm|sol` (кошельки).
+4. После успешного переноса удаляет из `recovered_wallets` только те строки, которые были обработаны в этой пачке.
+   - Пример: обработал 50 строк → удаляет эти же 50 строк.
+5. Всё изменение БД выполняется в одной транзакции (`BEGIN ... COMMIT`): если ошибка на переносе, удаление не выполняется.
+
+Запуск:
+
+```bash
+python3 scripts/migrate_legacy_wallets_to_split.py \
+  --env-file .env \
+  --legacy-table recovered_wallets \
+  --batch-size 50 \
+  --excel-output ./legacy_export_batch_001.xlsx
+```
+
+Полезные флаги:
+
+- `--dry-run` — только сделать Excel и показать статистику, без переноса/удаления в БД.
+- `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
+- Для больших `--batch-size` используется временный TSV + `\copy`, чтобы избежать ошибки Windows `WinError 206` (слишком длинная командная строка).
+
+Windows быстрый запуск:
+
+```bat
+run_legacy_export.bat [batch_size] [excel_output] [dry-run]
+```
+
+Примеры:
+
+```bat
+run_legacy_export.bat 50 legacy_export_001.xlsx
+run_legacy_export.bat 100 legacy_export_preview.xlsx dry-run
+```
+
 ## Manual wallet check mode
 
 Use this mode when you want to verify parser behavior on known addresses from a text file.
