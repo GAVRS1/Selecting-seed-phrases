@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
-"""Migrate all rows from legacy recovered_wallets into split tables + XLSX export.
+"""Migrate rows from legacy recovered_wallets table to split tables and export XLSX.
 
-Flow:
-1. Read every row from legacy table (ORDER BY id).
-2. Append rows to XLSX sheets: all/btc/evm/sol/unknown.
-3. For each row (one-by-one):
-   - insert mnemonic into seed_phrases_{btc|evm|sol}
-   - insert wallet into recovered_wallets_{btc|evm|sol}
-   - delete exactly this row from legacy table
-4. Commit after each processed wallet (per-row atomic migration).
+Behavior:
+1. Read rows from legacy table in batches (ordered by id).
+2. Build an Excel workbook with one sheet per blockchain group.
+3. Insert mnemonics into seed_phrases_{btc|evm|sol}.
+4. Insert wallet rows into recovered_wallets_{btc|evm|sol}.
+5. Delete only processed legacy rows in the same SQL transaction.
 
-This matches "migrated wallet -> delete this wallet" behavior.
+If DB write transaction fails, no deletions are performed.
 """
 
 from __future__ import annotations
 
 import argparse
-import importlib
 import os
 import re
+import subprocess
 import sys
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable
+
+PSQL_BIN = os.environ.get("PSQL_BIN", "psql")
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,44 @@ def validate_table_name(name: str) -> str:
     return name
 
 
+def sql_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def run_psql(conn: str, sql: str) -> str:
+    cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-c", sql]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"psql failed: {result.stderr.strip() or result.stdout.strip()}")
+    return result.stdout
+
+
+def fetch_legacy_rows(conn: str, legacy_table: str, batch_size: int) -> list[LegacyRow]:
+    sql = (
+        f"SELECT id, created_at, blockchain, address, mnemonic FROM {legacy_table} "
+        f"ORDER BY id LIMIT {batch_size};"
+    )
+    output = run_psql(conn, sql)
+
+    rows: list[LegacyRow] = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) != 5:
+            raise RuntimeError(f"Unexpected row format from psql: {line!r}")
+        rows.append(
+            LegacyRow(
+                row_id=int(parts[0]),
+                created_at=parts[1].strip(),
+                blockchain=parts[2].strip(),
+                address=parts[3].strip(),
+                mnemonic=parts[4].strip(),
+            )
+        )
+    return rows
+
+
 def classify_chain(blockchain: str) -> str | None:
     chain = blockchain.strip().lower()
     if chain in {"btc", "bitcoin"}:
@@ -76,131 +115,128 @@ def classify_chain(blockchain: str) -> str | None:
     return None
 
 
-def require_module(name: str, install_hint: str):
-    if importlib.util.find_spec(name) is None:
-        raise RuntimeError(f"Module '{name}' is required. Install: {install_hint}")
-    return importlib.import_module(name)
+def export_xlsx(rows: list[LegacyRow], output_path: str) -> None:
+    try:
+        from openpyxl import Workbook
+    except ImportError as exc:
+        raise RuntimeError(
+            "openpyxl is required for Excel export. Install it with: python3 -m pip install openpyxl"
+        ) from exc
 
+    wb = Workbook()
+    default_sheet = wb.active
+    wb.remove(default_sheet)
 
-def connect_postgres(conn_str: str):
-    psycopg_spec = importlib.util.find_spec("psycopg")
-    if psycopg_spec is not None:
-        psycopg = importlib.import_module("psycopg")
-        return psycopg.connect(conn_str)
+    groups: dict[str, list[LegacyRow]] = defaultdict(list)
+    for row in rows:
+        mapped = classify_chain(row.blockchain)
+        sheet_key = mapped if mapped is not None else "unknown"
+        groups[sheet_key].append(row)
 
-    psycopg2_spec = importlib.util.find_spec("psycopg2")
-    if psycopg2_spec is not None:
-        psycopg2 = importlib.import_module("psycopg2")
-        return psycopg2.connect(conn_str)
-
-    raise RuntimeError("PostgreSQL driver is missing. Install one of: python3 -m pip install psycopg OR psycopg2-binary")
-
-
-def export_and_migrate(
-    conn,
-    *,
-    legacy_table: str,
-    excel_output: str,
-    dry_run: bool,
-) -> None:
-    openpyxl = require_module("openpyxl", "python3 -m pip install openpyxl")
-
-    wb = openpyxl.Workbook(write_only=True)
-    sheets = {
-        "all": wb.create_sheet("all"),
-        "btc": wb.create_sheet("btc"),
-        "evm": wb.create_sheet("evm"),
-        "sol": wb.create_sheet("sol"),
-        "unknown": wb.create_sheet("unknown"),
-    }
-
+    all_sheet = wb.create_sheet("all")
     header = ["id", "created_at", "source_blockchain", "group_chain", "address", "mnemonic"]
-    for sheet in sheets.values():
+    all_sheet.append(header)
+    for row in rows:
+        all_sheet.append([
+            row.row_id,
+            row.created_at,
+            row.blockchain,
+            classify_chain(row.blockchain) or "unknown",
+            row.address,
+            row.mnemonic,
+        ])
+
+    for sheet_name in ("btc", "evm", "sol", "unknown"):
+        sheet = wb.create_sheet(sheet_name)
         sheet.append(header)
+        for row in groups.get(sheet_name, []):
+            sheet.append([
+                row.row_id,
+                row.created_at,
+                row.blockchain,
+                classify_chain(row.blockchain) or "unknown",
+                row.address,
+                row.mnemonic,
+            ])
 
-    read_cur = conn.cursor()
-    read_cur.execute(f"SELECT id, created_at, blockchain, address, mnemonic FROM {legacy_table} ORDER BY id")
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    wb.save(output_path)
 
-    transfer_sql = {
-        "btc": (
-            "INSERT INTO seed_phrases_btc (mnemonic) VALUES (%s) ON CONFLICT (mnemonic) DO NOTHING",
-            "INSERT INTO recovered_wallets_btc (blockchain, address, mnemonic) VALUES (%s, %s, %s) ON CONFLICT (blockchain, address, mnemonic) DO NOTHING",
-        ),
-        "evm": (
-            "INSERT INTO seed_phrases_evm (mnemonic) VALUES (%s) ON CONFLICT (mnemonic) DO NOTHING",
-            "INSERT INTO recovered_wallets_evm (blockchain, address, mnemonic) VALUES (%s, %s, %s) ON CONFLICT (blockchain, address, mnemonic) DO NOTHING",
-        ),
-        "sol": (
-            "INSERT INTO seed_phrases_sol (mnemonic) VALUES (%s) ON CONFLICT (mnemonic) DO NOTHING",
-            "INSERT INTO recovered_wallets_sol (blockchain, address, mnemonic) VALUES (%s, %s, %s) ON CONFLICT (blockchain, address, mnemonic) DO NOTHING",
-        ),
-    }
 
-    migrated = 0
-    skipped_unknown = 0
-    stats: dict[str, int] = {"btc": 0, "evm": 0, "sol": 0, "unknown": 0}
+def build_transfer_sql(rows: list[LegacyRow], legacy_table: str) -> str:
+    if not rows:
+        return ""
 
-    for raw in read_cur:
-        row = LegacyRow(
-            row_id=int(raw[0]),
-            created_at=str(raw[1]),
-            blockchain=str(raw[2]).strip(),
-            address=str(raw[3]).strip(),
-            mnemonic=str(raw[4]).strip(),
+    values = ",\n".join(
+        (
+            "("
+            f"{row.row_id}, "
+            f"{sql_literal(row.blockchain)}, "
+            f"{sql_literal(row.address)}, "
+            f"{sql_literal(row.mnemonic)}"
+            ")"
         )
+        for row in rows
+    )
 
-        chain_group = classify_chain(row.blockchain) or "unknown"
-        stats[chain_group] += 1
+    return f"""
+BEGIN;
+WITH batch(id, blockchain, address, mnemonic) AS (
+    VALUES
+    {values}
+),
+classified AS (
+    SELECT
+        id,
+        blockchain,
+        address,
+        mnemonic,
+        CASE
+            WHEN lower(blockchain) IN ('btc', 'bitcoin') THEN 'btc'
+            WHEN lower(blockchain) IN ('eth', 'ethereum', 'evm', 'bsc', 'polygon', 'arbitrum', 'optimism', 'avalanche', 'base') THEN 'evm'
+            WHEN lower(blockchain) IN ('sol', 'solana') THEN 'sol'
+            ELSE NULL
+        END AS target_chain
+    FROM batch
+)
+INSERT INTO seed_phrases_btc (mnemonic)
+SELECT DISTINCT mnemonic FROM classified WHERE target_chain = 'btc'
+ON CONFLICT (mnemonic) DO NOTHING;
 
-        sheet_row = [row.row_id, row.created_at, row.blockchain, chain_group, row.address, row.mnemonic]
-        sheets["all"].append(sheet_row)
-        sheets[chain_group].append(sheet_row)
+INSERT INTO seed_phrases_evm (mnemonic)
+SELECT DISTINCT mnemonic FROM classified WHERE target_chain = 'evm'
+ON CONFLICT (mnemonic) DO NOTHING;
 
-        if dry_run:
-            continue
+INSERT INTO seed_phrases_sol (mnemonic)
+SELECT DISTINCT mnemonic FROM classified WHERE target_chain = 'sol'
+ON CONFLICT (mnemonic) DO NOTHING;
 
-        if chain_group == "unknown":
-            skipped_unknown += 1
-            continue
+INSERT INTO recovered_wallets_btc (blockchain, address, mnemonic)
+SELECT blockchain, address, mnemonic FROM classified WHERE target_chain = 'btc'
+ON CONFLICT (blockchain, address, mnemonic) DO NOTHING;
 
-        write_cur = conn.cursor()
-        try:
-            seed_sql, wallet_sql = transfer_sql[chain_group]
-            write_cur.execute(seed_sql, (row.mnemonic,))
-            write_cur.execute(wallet_sql, (row.blockchain, row.address, row.mnemonic))
-            write_cur.execute(f"DELETE FROM {legacy_table} WHERE id = %s", (row.row_id,))
-            conn.commit()
-            migrated += 1
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            write_cur.close()
+INSERT INTO recovered_wallets_evm (blockchain, address, mnemonic)
+SELECT blockchain, address, mnemonic FROM classified WHERE target_chain = 'evm'
+ON CONFLICT (blockchain, address, mnemonic) DO NOTHING;
 
-    read_cur.close()
+INSERT INTO recovered_wallets_sol (blockchain, address, mnemonic)
+SELECT blockchain, address, mnemonic FROM classified WHERE target_chain = 'sol'
+ON CONFLICT (blockchain, address, mnemonic) DO NOTHING;
 
-    os.makedirs(os.path.dirname(excel_output) or ".", exist_ok=True)
-    wb.save(excel_output)
-
-    print(f"Exported rows to Excel: {excel_output}")
-    print(f"Split stats => btc={stats['btc']} evm={stats['evm']} sol={stats['sol']} unknown={stats['unknown']}")
-
-    if dry_run:
-        print("Dry-run enabled: DB transfer and deletion skipped.")
-        return
-
-    print(f"Migrated+deleted wallets: {migrated}")
-    if skipped_unknown:
-        print(f"Skipped unknown wallets (not deleted): {skipped_unknown}")
+DELETE FROM {legacy_table}
+WHERE id IN (SELECT id FROM batch);
+COMMIT;
+"""
 
 
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Migrate ALL rows from legacy recovered_wallets to split tables with XLSX export."
+        description="Migrate legacy recovered_wallets rows to split tables with Excel export and delete processed rows."
     )
     parser.add_argument("--env-file", default=".env", help="Path to .env file (default: .env)")
     parser.add_argument("--postgres-conn", default=None, help="PostgreSQL connection string")
     parser.add_argument("--legacy-table", default="recovered_wallets", help="Legacy source table")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Rows to process in one run")
     parser.add_argument(
         "--excel-output",
         default=f"legacy_wallets_export_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx",
@@ -216,22 +252,39 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.batch_size <= 0:
+        print("--batch-size must be > 0", file=sys.stderr)
+        return 2
 
     try:
-        conn_str = resolve_connection(args.postgres_conn, args.env_file)
+        conn = resolve_connection(args.postgres_conn, args.env_file)
         legacy_table = validate_table_name(args.legacy_table)
+        rows = fetch_legacy_rows(conn, legacy_table, args.batch_size)
 
-        conn = connect_postgres(conn_str)
-        try:
-            export_and_migrate(
-                conn,
-                legacy_table=legacy_table,
-                excel_output=args.excel_output,
-                dry_run=args.dry_run,
-            )
-        finally:
-            conn.close()
+        if not rows:
+            print("No rows found in legacy table; nothing to migrate.")
+            return 0
 
+        export_xlsx(rows, args.excel_output)
+
+        stats: dict[str, int] = {"btc": 0, "evm": 0, "sol": 0, "unknown": 0}
+        for row in rows:
+            stats[classify_chain(row.blockchain) or "unknown"] += 1
+
+        print(f"Exported {len(rows)} rows to Excel: {args.excel_output}")
+        print(f"Split stats => btc={stats['btc']} evm={stats['evm']} sol={stats['sol']} unknown={stats['unknown']}")
+
+        if args.dry_run:
+            print("Dry-run enabled: DB transfer and deletion skipped.")
+            return 0
+
+        transfer_sql = build_transfer_sql(rows, legacy_table)
+        run_psql(conn, transfer_sql)
+
+        print(
+            "Transferred and deleted rows from legacy table: "
+            f"{len(rows)} (ids {rows[0].row_id}..{rows[-1].row_id})"
+        )
         return 0
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)

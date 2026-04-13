@@ -216,13 +216,14 @@ python3 scripts/check_wallet_balances.py \
 
 Что делает за один запуск:
 
-1. Берёт **все строки** из legacy-таблицы `recovered_wallets` (по `id`).
+1. Берёт пачку строк из legacy-таблицы `recovered_wallets` (по `id`, через `--batch-size`).
 2. Создаёт Excel-файл (`.xlsx`) со всеми строками и отдельными листами: `btc`, `evm`, `sol`, `unknown`.
 3. Переносит данные в новую split-схему:
    - `seed_phrases_btc|evm|sol` (уникальные сид-фразы),
    - `recovered_wallets_btc|evm|sol` (кошельки).
-4. Работает по одному кошельку: **перенёс кошелёк → удалил этот кошелёк** из `recovered_wallets` (коммит на каждую запись).
-5. Если `blockchain` не удалось отнести к `btc|evm|sol`, строка попадает в лист `unknown` и не удаляется из legacy-таблицы.
+4. После успешного переноса удаляет из `recovered_wallets` только те строки, которые были обработаны в этой пачке.
+   - Пример: обработал 50 строк → удаляет эти же 50 строк.
+5. Всё изменение БД выполняется в одной транзакции (`BEGIN ... COMMIT`): если ошибка на переносе, удаление не выполняется.
 
 Запуск:
 
@@ -230,6 +231,7 @@ python3 scripts/check_wallet_balances.py \
 python3 scripts/migrate_legacy_wallets_to_split.py \
   --env-file .env \
   --legacy-table recovered_wallets \
+  --batch-size 50 \
   --excel-output ./legacy_export_batch_001.xlsx
 ```
 
@@ -237,20 +239,18 @@ python3 scripts/migrate_legacy_wallets_to_split.py \
 
 - `--dry-run` — только сделать Excel и показать статистику, без переноса/удаления в БД.
 - `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
-- Для работы нужен PostgreSQL-драйвер Python: `psycopg` или `psycopg2-binary`.
-- Для Excel нужен `openpyxl`.
 
 Windows быстрый запуск:
 
 ```bat
-run_legacy_export.bat [excel_output] [dry-run]
+run_legacy_export.bat [batch_size] [excel_output] [dry-run]
 ```
 
 Примеры:
 
 ```bat
-run_legacy_export.bat legacy_export_full.xlsx
-run_legacy_export.bat legacy_export_preview.xlsx dry-run
+run_legacy_export.bat 50 legacy_export_001.xlsx
+run_legacy_export.bat 100 legacy_export_preview.xlsx dry-run
 ```
 
 ## Manual wallet check mode
