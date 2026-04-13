@@ -2,8 +2,7 @@
 """Check balances for wallets stored in PostgreSQL or manual TXT file.
 
 Workflow:
-1. Read wallet records from PostgreSQL table (`blockchain`, `address`, `mnemonic`)
-   or from `manual_wallets.txt`.
+1. Read wallet records from PostgreSQL result tables (`btc/evm/sol`) or from manual TXT.
 2. Query on-chain balances by blockchain.
 3. Print `blockchain/address/mnemonic/balance` to console for each successfully checked wallet.
 4. If balance/assets > 0, append `blockchain/address/mnemonic_or_test/balance` to recovered_wallets.txt.
@@ -37,6 +36,12 @@ PROXY_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..",
 MAX_PROXY_ATTEMPTS = 3
 DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
 DEFAULT_DELAY_SECONDS = 0.2
+SUPPORTED_RESULT_CHAINS = ("btc", "eth", "sol")
+DEFAULT_RESULT_TABLE_BY_CHAIN = {
+    "btc": "recovered_wallets_btc",
+    "eth": "recovered_wallets_evm",
+    "sol": "recovered_wallets_sol",
+}
 
 NETWORK_OPENER: urllib.request.OpenerDirector | None = None
 PROXY_ROTATOR: "ProxyRotator | None" = None
@@ -119,6 +124,24 @@ def fetch_rows(conn: str, table: str) -> list[WalletRow]:
             )
         )
     return rows
+
+
+def resolve_result_tables(
+    env_file: str,
+    *,
+    cli_table_btc: str,
+    cli_table_evm: str,
+    cli_table_sol: str,
+) -> dict[str, str]:
+    env_values = parse_env_file(env_file)
+    table_btc = cli_table_btc or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_BTC") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_BTC") or DEFAULT_RESULT_TABLE_BY_CHAIN["btc"]
+    table_evm = cli_table_evm or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_EVM") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_EVM") or DEFAULT_RESULT_TABLE_BY_CHAIN["eth"]
+    table_sol = cli_table_sol or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_SOL") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_SOL") or DEFAULT_RESULT_TABLE_BY_CHAIN["sol"]
+    by_chain = {"btc": table_btc, "eth": table_evm, "sol": table_sol}
+    for chain, table in by_chain.items():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+            raise ValueError(f"Invalid PostgreSQL table name for {chain}: {table}")
+    return by_chain
 
 
 def parse_manual_wallets(path: str) -> list[WalletRow]:
@@ -493,6 +516,20 @@ def process_wallets(
     return 0
 
 
+def process_result_chain(
+    chain: str,
+    conn: str,
+    table: str,
+    output_path: str,
+    delay_seconds: float,
+) -> int:
+    print("=" * 72)
+    print(f"[{chain.upper()} CONSOLE] table={table}")
+    wallets = fetch_rows(conn, table)
+    wallets = [wallet for wallet in wallets if wallet.blockchain == chain]
+    return process_wallets(wallets, output_path, delay_seconds, conn=conn, table=table)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -507,6 +544,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--postgres-conn", help="PostgreSQL connection string. Defaults to RECOVERY_POSTGRES_CONN from .env/env")
     parser.add_argument("--postgres-table", default="", help="PostgreSQL table with wallet records (default: recovered_wallets)")
+    parser.add_argument("--postgres-table-btc", default="", help="PostgreSQL BTC result table (default: recovered_wallets_btc)")
+    parser.add_argument("--postgres-table-evm", default="", help="PostgreSQL EVM/ETH result table (default: recovered_wallets_evm)")
+    parser.add_argument("--postgres-table-sol", default="", help="PostgreSQL SOL result table (default: recovered_wallets_sol)")
+    parser.add_argument(
+        "--chain",
+        choices=SUPPORTED_RESULT_CHAINS,
+        default="",
+        help="Check only one chain console (btc|eth|sol). By default checks all 3 tables sequentially.",
+    )
     parser.add_argument("--env-file", default=".env", help="Path to env file (default: .env)")
     parser.add_argument("--output", default="recovered_wallets.txt", help="Output file for non-empty wallets")
     parser.add_argument(
@@ -546,9 +592,23 @@ def main() -> int:
             wallets = parse_manual_wallets(args.manual_wallets)
             return process_wallets(wallets, args.output, delay_seconds)
 
-        conn, table = resolve_config(args.postgres_conn, args.postgres_table, args.env_file)
-        wallets = fetch_rows(conn, table)
-        return process_wallets(wallets, args.output, delay_seconds, conn=conn, table=table)
+        conn, legacy_table = resolve_config(args.postgres_conn, args.postgres_table, args.env_file)
+        if args.postgres_table:
+            wallets = fetch_rows(conn, legacy_table)
+            return process_wallets(wallets, args.output, delay_seconds, conn=conn, table=legacy_table)
+
+        tables_by_chain = resolve_result_tables(
+            args.env_file,
+            cli_table_btc=args.postgres_table_btc,
+            cli_table_evm=args.postgres_table_evm,
+            cli_table_sol=args.postgres_table_sol,
+        )
+        if args.chain:
+            return process_result_chain(args.chain, conn, tables_by_chain[args.chain], args.output, delay_seconds)
+
+        for chain in SUPPORTED_RESULT_CHAINS:
+            process_result_chain(chain, conn, tables_by_chain[chain], args.output, delay_seconds)
+        return 0
     except Exception as exc:  # noqa: BLE001 - command-line entrypoint
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1

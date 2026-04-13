@@ -53,6 +53,8 @@ private:
     bool wallet_record_exists(const std::string& chain_name,
                               const std::string& address,
                               const std::string& mnemonic_words) const;
+    bool mark_seed_phrase_if_new(const std::string& chain_name,
+                                 const std::string& mnemonic_words) const;
     void run_manual_wallet_checks();
     std::optional<std::pair<std::string, std::string>> parse_manual_wallet_line(const std::string& line) const;
     void persist_wallet_record(const std::string& chain_name,

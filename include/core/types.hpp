@@ -25,6 +25,12 @@ struct AppConfig {
     std::string recovered_wallets_path{"recovered_wallets.txt"};
     std::string postgres_conninfo;
     std::string postgres_table{"recovered_wallets"};
+    std::string postgres_seed_table_btc{"seed_phrases_btc"};
+    std::string postgres_seed_table_evm{"seed_phrases_evm"};
+    std::string postgres_seed_table_sol{"seed_phrases_sol"};
+    std::string postgres_result_table_btc{"recovered_wallets_btc"};
+    std::string postgres_result_table_evm{"recovered_wallets_evm"};
+    std::string postgres_result_table_sol{"recovered_wallets_sol"};
     std::string env_file_path{".env"};
     std::string manual_wallets_path;
     std::string bip39_passphrase;

@@ -13,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <cstdio>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -141,6 +142,25 @@ std::string wallet_record_key(const std::string& chain_name,
     return chain_name + "|" + address + "|" + mnemonic_words;
 }
 
+std::string seed_record_key(const std::string& chain_name,
+                            const std::string& mnemonic_words) {
+    return "seed|" + chain_name + "|" + mnemonic_words;
+}
+
+const std::string& seed_table_for_chain(const core::AppConfig& cfg, const std::string& chain_name) {
+    if (chain_name == "btc") return cfg.postgres_seed_table_btc;
+    if (chain_name == "eth") return cfg.postgres_seed_table_evm;
+    if (chain_name == "sol") return cfg.postgres_seed_table_sol;
+    throw std::runtime_error("No PostgreSQL seed table configured for chain: " + chain_name);
+}
+
+const std::string& result_table_for_chain(const core::AppConfig& cfg, const std::string& chain_name) {
+    if (chain_name == "btc") return cfg.postgres_result_table_btc;
+    if (chain_name == "eth") return cfg.postgres_result_table_evm;
+    if (chain_name == "sol") return cfg.postgres_result_table_sol;
+    return cfg.postgres_table;
+}
+
 std::string shell_quote_arg(const std::string& value) {
     std::string out;
     out.reserve(value.size() + 2);
@@ -166,6 +186,22 @@ std::string shell_quote_arg(const std::string& value) {
     out.push_back('\'');
 #endif
     return out;
+}
+
+FILE* popen_read(const std::string& command) {
+#ifdef _WIN32
+    return _popen(command.c_str(), "r");
+#else
+    return popen(command.c_str(), "r");
+#endif
+}
+
+int pclose_read(FILE* pipe) {
+#ifdef _WIN32
+    return _pclose(pipe);
+#else
+    return pclose(pipe);
+#endif
 }
 
 bool is_valid_sql_identifier(const std::string& value) {
@@ -272,11 +308,12 @@ void Pipeline::persist_wallet_record(const std::string& chain_name,
     }
 
     if (!config_.postgres_conninfo.empty()) {
-        if (!is_valid_sql_identifier(config_.postgres_table)) {
-            throw std::runtime_error("Invalid PostgreSQL table name: " + config_.postgres_table);
+        const std::string& result_table = result_table_for_chain(config_, chain_name);
+        if (!is_valid_sql_identifier(result_table)) {
+            throw std::runtime_error("Invalid PostgreSQL table name: " + result_table);
         }
         const std::string insert =
-            "INSERT INTO " + config_.postgres_table +
+            "INSERT INTO " + result_table +
             " (blockchain, address, mnemonic) VALUES ('" +
             escape_sql_literal(chain_name) + "', '" +
             escape_sql_literal(address) + "', '" +
@@ -300,6 +337,57 @@ void Pipeline::persist_wallet_record(const std::string& chain_name,
     out << chain_name << "/" << address << "/" << mnemonic_words << '\n';
     std::lock_guard<std::mutex> cache_lock(wallet_cache_mutex_);
     known_wallet_records_.insert(key);
+}
+
+bool Pipeline::mark_seed_phrase_if_new(const std::string& chain_name,
+                                       const std::string& mnemonic_words) const {
+    const std::string key = seed_record_key(chain_name, mnemonic_words);
+    {
+        std::lock_guard<std::mutex> lock(wallet_cache_mutex_);
+        if (known_wallet_records_.contains(key)) {
+            return false;
+        }
+    }
+
+    if (config_.postgres_conninfo.empty()) {
+        std::lock_guard<std::mutex> lock(wallet_cache_mutex_);
+        known_wallet_records_.insert(key);
+        return true;
+    }
+
+    const std::string& table = seed_table_for_chain(config_, chain_name);
+    if (!is_valid_sql_identifier(table)) {
+        throw std::runtime_error("Invalid PostgreSQL seed table name: " + table);
+    }
+
+    const std::string insert =
+        "INSERT INTO " + table + " (mnemonic) VALUES ('" +
+        escape_sql_literal(mnemonic_words) + "') ON CONFLICT DO NOTHING RETURNING id;";
+
+    std::lock_guard<std::mutex> lock(postgres_mutex_);
+    const std::string cmd = "psql " + shell_quote_arg(config_.postgres_conninfo) +
+                            " -v ON_ERROR_STOP=1 -At -q -c " + shell_quote_arg(insert);
+    FILE* pipe = popen_read(cmd);
+    if (pipe == nullptr) {
+        throw std::runtime_error("Failed to execute PostgreSQL seed dedup command.");
+    }
+
+    std::string output;
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output += buffer;
+    }
+    const int rc = pclose_read(pipe);
+    if (rc != 0) {
+        throw std::runtime_error("Failed to execute PostgreSQL seed dedup command. Exit code: " + std::to_string(rc));
+    }
+
+    const bool inserted = !trim_copy(output).empty();
+    if (inserted) {
+        std::lock_guard<std::mutex> cache_lock(wallet_cache_mutex_);
+        known_wallet_records_.insert(key);
+    }
+    return inserted;
 }
 
 std::optional<std::pair<std::string, std::string>> Pipeline::parse_manual_wallet_line(const std::string& line) const {
@@ -403,6 +491,9 @@ void Pipeline::run() {
                     module_seed = ton_mnemonic_to_private_key_seed(mnemonic, config_.bip39_passphrase);
                 }
                 futures.push_back(pool.enqueue([&, paths, module_ptr = module.get(), seed_copy = module_seed, mnemonic_words]() mutable {
+                    if (!mark_seed_phrase_if_new(module_ptr->name(), mnemonic_words)) {
+                        return ChainMatchResult{module_ptr->name(), std::nullopt};
+                    }
                     auto derived = module_ptr->derive_addresses(seed_copy, paths, config_.scan_limit);
                     if (matcher_.has_targets()) {
                         for (const auto& address : derived) {

@@ -104,6 +104,12 @@ core::AppConfig parse_args(int argc, char** argv) {
     core::AppConfig cfg;
     bool postgres_conn_set_by_cli = false;
     bool postgres_table_set_by_cli = false;
+    bool seed_table_btc_set_by_cli = false;
+    bool seed_table_evm_set_by_cli = false;
+    bool seed_table_sol_set_by_cli = false;
+    bool result_table_btc_set_by_cli = false;
+    bool result_table_evm_set_by_cli = false;
+    bool result_table_sol_set_by_cli = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -129,6 +135,24 @@ core::AppConfig parse_args(int argc, char** argv) {
         } else if (arg == "--postgres-table" && i + 1 < argc) {
             cfg.postgres_table = argv[++i];
             postgres_table_set_by_cli = true;
+        } else if (arg == "--postgres-seed-table-btc" && i + 1 < argc) {
+            cfg.postgres_seed_table_btc = argv[++i];
+            seed_table_btc_set_by_cli = true;
+        } else if (arg == "--postgres-seed-table-evm" && i + 1 < argc) {
+            cfg.postgres_seed_table_evm = argv[++i];
+            seed_table_evm_set_by_cli = true;
+        } else if (arg == "--postgres-seed-table-sol" && i + 1 < argc) {
+            cfg.postgres_seed_table_sol = argv[++i];
+            seed_table_sol_set_by_cli = true;
+        } else if (arg == "--postgres-result-table-btc" && i + 1 < argc) {
+            cfg.postgres_result_table_btc = argv[++i];
+            result_table_btc_set_by_cli = true;
+        } else if (arg == "--postgres-result-table-evm" && i + 1 < argc) {
+            cfg.postgres_result_table_evm = argv[++i];
+            result_table_evm_set_by_cli = true;
+        } else if (arg == "--postgres-result-table-sol" && i + 1 < argc) {
+            cfg.postgres_result_table_sol = argv[++i];
+            result_table_sol_set_by_cli = true;
         } else if (arg == "--env-file" && i + 1 < argc) {
             cfg.env_file_path = argv[++i];
         } else if (arg == "--manual-wallets" && i + 1 < argc) {
@@ -168,6 +192,48 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.postgres_table = dotenv_table_it->second;
         } else if (const auto env_table = getenv_copy("RECOVERY_POSTGRES_TABLE"); env_table.has_value()) {
             cfg.postgres_table = *env_table;
+        }
+    }
+    if (!seed_table_btc_set_by_cli) {
+        if (const auto it = dotenv_values.find("RECOVERY_POSTGRES_SEED_TABLE_BTC"); it != dotenv_values.end() && !it->second.empty()) {
+            cfg.postgres_seed_table_btc = it->second;
+        } else if (const auto value = getenv_copy("RECOVERY_POSTGRES_SEED_TABLE_BTC"); value.has_value()) {
+            cfg.postgres_seed_table_btc = *value;
+        }
+    }
+    if (!seed_table_evm_set_by_cli) {
+        if (const auto it = dotenv_values.find("RECOVERY_POSTGRES_SEED_TABLE_EVM"); it != dotenv_values.end() && !it->second.empty()) {
+            cfg.postgres_seed_table_evm = it->second;
+        } else if (const auto value = getenv_copy("RECOVERY_POSTGRES_SEED_TABLE_EVM"); value.has_value()) {
+            cfg.postgres_seed_table_evm = *value;
+        }
+    }
+    if (!seed_table_sol_set_by_cli) {
+        if (const auto it = dotenv_values.find("RECOVERY_POSTGRES_SEED_TABLE_SOL"); it != dotenv_values.end() && !it->second.empty()) {
+            cfg.postgres_seed_table_sol = it->second;
+        } else if (const auto value = getenv_copy("RECOVERY_POSTGRES_SEED_TABLE_SOL"); value.has_value()) {
+            cfg.postgres_seed_table_sol = *value;
+        }
+    }
+    if (!result_table_btc_set_by_cli) {
+        if (const auto it = dotenv_values.find("RECOVERY_POSTGRES_RESULT_TABLE_BTC"); it != dotenv_values.end() && !it->second.empty()) {
+            cfg.postgres_result_table_btc = it->second;
+        } else if (const auto value = getenv_copy("RECOVERY_POSTGRES_RESULT_TABLE_BTC"); value.has_value()) {
+            cfg.postgres_result_table_btc = *value;
+        }
+    }
+    if (!result_table_evm_set_by_cli) {
+        if (const auto it = dotenv_values.find("RECOVERY_POSTGRES_RESULT_TABLE_EVM"); it != dotenv_values.end() && !it->second.empty()) {
+            cfg.postgres_result_table_evm = it->second;
+        } else if (const auto value = getenv_copy("RECOVERY_POSTGRES_RESULT_TABLE_EVM"); value.has_value()) {
+            cfg.postgres_result_table_evm = *value;
+        }
+    }
+    if (!result_table_sol_set_by_cli) {
+        if (const auto it = dotenv_values.find("RECOVERY_POSTGRES_RESULT_TABLE_SOL"); it != dotenv_values.end() && !it->second.empty()) {
+            cfg.postgres_result_table_sol = it->second;
+        } else if (const auto value = getenv_copy("RECOVERY_POSTGRES_RESULT_TABLE_SOL"); value.has_value()) {
+            cfg.postgres_result_table_sol = *value;
         }
     }
 
