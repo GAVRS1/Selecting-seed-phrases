@@ -85,8 +85,8 @@ def run_psql(conn: str, sql: str) -> str:
         pass
 
     if result.returncode != 0:
-        raise RuntimeError(f"psql failed: {result.stderr.strip() or result.stdout.strip()}")
-    return result.stdout
+        raise RuntimeError(f"psql failed: {stderr.strip() or stdout.strip()}")
+    return stdout
 
 
 def fetch_legacy_rows(conn: str, legacy_table: str, batch_size: int, after_id: int = 0) -> list[LegacyRow]:
