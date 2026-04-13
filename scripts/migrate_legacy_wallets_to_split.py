@@ -18,6 +18,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -71,17 +72,30 @@ def sql_literal(value: str) -> str:
 
 
 def run_psql(conn: str, sql: str) -> str:
-    cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-c", sql]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    """Run SQL via a temp file to avoid Windows command-length limits."""
+    with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False, encoding="utf-8") as handle:
+        handle.write(sql)
+        sql_path = handle.name
+
+    cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", sql_path]
+    result = subprocess.run(cmd, capture_output=True, text=False, check=False)
+    try:
+        os.unlink(sql_path)
+    except OSError:
+        pass
+
+    stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
+    stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
     if result.returncode != 0:
-        raise RuntimeError(f"psql failed: {result.stderr.strip() or result.stdout.strip()}")
-    return result.stdout
+        raise RuntimeError(f"psql failed: {stderr.strip() or stdout.strip()}")
+    return stdout
 
 
-def fetch_legacy_rows(conn: str, legacy_table: str, batch_size: int) -> list[LegacyRow]:
+def fetch_legacy_rows(conn: str, legacy_table: str, batch_size: int, after_id: int = 0) -> list[LegacyRow]:
+    where_clause = f"WHERE id > {after_id} " if after_id > 0 else ""
     sql = (
         f"SELECT id, created_at, blockchain, address, mnemonic FROM {legacy_table} "
-        f"ORDER BY id LIMIT {batch_size};"
+        f"{where_clause}ORDER BY id LIMIT {batch_size};"
     )
     output = run_psql(conn, sql)
 
@@ -259,32 +273,46 @@ def main(argv: Iterable[str] | None = None) -> int:
     try:
         conn = resolve_connection(args.postgres_conn, args.env_file)
         legacy_table = validate_table_name(args.legacy_table)
-        rows = fetch_legacy_rows(conn, legacy_table, args.batch_size)
-
-        if not rows:
+        first_batch = fetch_legacy_rows(conn, legacy_table, args.batch_size)
+        if not first_batch:
             print("No rows found in legacy table; nothing to migrate.")
             return 0
 
-        export_xlsx(rows, args.excel_output)
-
+        all_rows: list[LegacyRow] = []
         stats: dict[str, int] = {"btc": 0, "evm": 0, "sol": 0, "unknown": 0}
-        for row in rows:
-            stats[classify_chain(row.blockchain) or "unknown"] += 1
+        total_processed = 0
+        batch_index = 0
+        next_after_id = 0
 
-        print(f"Exported {len(rows)} rows to Excel: {args.excel_output}")
+        while True:
+            rows = first_batch if batch_index == 0 else fetch_legacy_rows(conn, legacy_table, args.batch_size, next_after_id)
+            if not rows:
+                break
+
+            batch_index += 1
+            all_rows.extend(rows)
+            for row in rows:
+                stats[classify_chain(row.blockchain) or "unknown"] += 1
+
+            if not args.dry_run:
+                transfer_sql = build_transfer_sql(rows, legacy_table)
+                run_psql(conn, transfer_sql)
+                total_processed += len(rows)
+                print(
+                    f"Batch {batch_index}: transferred/deleted {len(rows)} rows "
+                    f"(ids {rows[0].row_id}..{rows[-1].row_id})"
+                )
+            next_after_id = rows[-1].row_id
+
+        export_xlsx(all_rows, args.excel_output)
+        print(f"Exported {len(all_rows)} rows to Excel: {args.excel_output}")
         print(f"Split stats => btc={stats['btc']} evm={stats['evm']} sol={stats['sol']} unknown={stats['unknown']}")
 
         if args.dry_run:
             print("Dry-run enabled: DB transfer and deletion skipped.")
             return 0
 
-        transfer_sql = build_transfer_sql(rows, legacy_table)
-        run_psql(conn, transfer_sql)
-
-        print(
-            "Transferred and deleted rows from legacy table: "
-            f"{len(rows)} (ids {rows[0].row_id}..{rows[-1].row_id})"
-        )
+        print(f"Transferred and deleted rows from legacy table: {total_processed}")
         return 0
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)
