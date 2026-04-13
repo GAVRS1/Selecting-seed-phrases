@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Migrate rows from legacy recovered_wallets table to split tables and export XLSX.
+"""Export rows from legacy recovered_wallets table to XLSX and then delete them.
 
 Behavior:
 1. Read rows from legacy table in batches (ordered by id).
 2. Build an Excel workbook with one sheet per blockchain group.
-3. Insert mnemonics into seed_phrases_{btc|evm|sol}.
-4. Insert wallet rows into recovered_wallets_{btc|evm|sol}.
-5. Delete only processed legacy rows in the same SQL transaction.
+3. If export succeeds, delete only the exported legacy rows from source table.
 
-If DB write transaction fails, no deletions are performed.
+If export fails, no deletions are performed.
 """
 
 from __future__ import annotations
@@ -67,9 +65,18 @@ def validate_table_name(name: str) -> str:
     return name
 
 
-def sql_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+def run_psql(conn: str, sql: str) -> str:
+    """Run SQL via a temp file to avoid Windows command-length limits."""
+    with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False, encoding="utf-8") as handle:
+        handle.write(sql)
+        sql_path = handle.name
 
+    cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", sql_path]
+    result = subprocess.run(cmd, capture_output=True, text=False, check=False)
+    try:
+        os.unlink(sql_path)
+    except OSError:
+        pass
 
 def run_psql(conn: str, sql: str) -> str:
     """Run SQL via a temp file to avoid Windows command-length limits."""
@@ -175,75 +182,21 @@ def export_xlsx(rows: list[LegacyRow], output_path: str) -> None:
     wb.save(output_path)
 
 
-def build_transfer_sql(rows: list[LegacyRow], legacy_table: str) -> str:
+def build_delete_sql(rows: list[LegacyRow], legacy_table: str) -> str:
     if not rows:
         return ""
 
-    values = ",\n".join(
-        (
-            "("
-            f"{row.row_id}, "
-            f"{sql_literal(row.blockchain)}, "
-            f"{sql_literal(row.address)}, "
-            f"{sql_literal(row.mnemonic)}"
-            ")"
-        )
-        for row in rows
-    )
-
     return f"""
 BEGIN;
-WITH batch(id, blockchain, address, mnemonic) AS (
-    VALUES
-    {values}
-),
-classified AS (
-    SELECT
-        id,
-        blockchain,
-        address,
-        mnemonic,
-        CASE
-            WHEN lower(blockchain) IN ('btc', 'bitcoin') THEN 'btc'
-            WHEN lower(blockchain) IN ('eth', 'ethereum', 'evm', 'bsc', 'polygon', 'arbitrum', 'optimism', 'avalanche', 'base') THEN 'evm'
-            WHEN lower(blockchain) IN ('sol', 'solana') THEN 'sol'
-            ELSE NULL
-        END AS target_chain
-    FROM batch
-)
-INSERT INTO seed_phrases_btc (mnemonic)
-SELECT DISTINCT mnemonic FROM classified WHERE target_chain = 'btc'
-ON CONFLICT (mnemonic) DO NOTHING;
-
-INSERT INTO seed_phrases_evm (mnemonic)
-SELECT DISTINCT mnemonic FROM classified WHERE target_chain = 'evm'
-ON CONFLICT (mnemonic) DO NOTHING;
-
-INSERT INTO seed_phrases_sol (mnemonic)
-SELECT DISTINCT mnemonic FROM classified WHERE target_chain = 'sol'
-ON CONFLICT (mnemonic) DO NOTHING;
-
-INSERT INTO recovered_wallets_btc (blockchain, address, mnemonic)
-SELECT blockchain, address, mnemonic FROM classified WHERE target_chain = 'btc'
-ON CONFLICT (blockchain, address, mnemonic) DO NOTHING;
-
-INSERT INTO recovered_wallets_evm (blockchain, address, mnemonic)
-SELECT blockchain, address, mnemonic FROM classified WHERE target_chain = 'evm'
-ON CONFLICT (blockchain, address, mnemonic) DO NOTHING;
-
-INSERT INTO recovered_wallets_sol (blockchain, address, mnemonic)
-SELECT blockchain, address, mnemonic FROM classified WHERE target_chain = 'sol'
-ON CONFLICT (blockchain, address, mnemonic) DO NOTHING;
-
 DELETE FROM {legacy_table}
-WHERE id IN (SELECT id FROM batch);
+WHERE id IN ({",".join(str(row.row_id) for row in rows)});
 COMMIT;
 """
 
 
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Migrate legacy recovered_wallets rows to split tables with Excel export and delete processed rows."
+        description="Export legacy recovered_wallets rows to Excel and delete exported rows from source table."
     )
     parser.add_argument("--env-file", default=".env", help="Path to .env file (default: .env)")
     parser.add_argument("--postgres-conn", default=None, help="PostgreSQL connection string")
@@ -257,7 +210,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Only export XLSX and print stats; do not modify DB and do not delete rows.",
+        help="Only export XLSX and print stats; do not delete rows from DB.",
     )
     return parser.parse_args(argv)
 
@@ -307,7 +260,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(f"Split stats => btc={stats['btc']} evm={stats['evm']} sol={stats['sol']} unknown={stats['unknown']}")
 
         if args.dry_run:
-            print("Dry-run enabled: DB transfer and deletion skipped.")
+            print("Dry-run enabled: deletion skipped.")
             return 0
 
         print(f"Transferred and deleted rows from legacy table: {total_processed}")
