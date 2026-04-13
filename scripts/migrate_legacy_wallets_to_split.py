@@ -78,8 +78,19 @@ def run_psql(conn: str, sql: str) -> str:
     except OSError:
         pass
 
-    stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
-    stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
+def run_psql(conn: str, sql: str) -> str:
+    """Run SQL via a temp file to avoid Windows command-length limits."""
+    with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False, encoding="utf-8") as handle:
+        handle.write(sql)
+        sql_path = handle.name
+
+    cmd = [PSQL_BIN, conn, "-v", "ON_ERROR_STOP=1", "-At", "-F", "\t", "-f", sql_path]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        os.unlink(sql_path)
+    except OSError:
+        pass
+
     if result.returncode != 0:
         raise RuntimeError(f"psql failed: {stderr.strip() or stdout.strip()}")
     return stdout
@@ -215,11 +226,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         legacy_table = validate_table_name(args.legacy_table)
         first_batch = fetch_legacy_rows(conn, legacy_table, args.batch_size)
         if not first_batch:
-            print("No rows found in legacy table; nothing to export.")
+            print("No rows found in legacy table; nothing to migrate.")
             return 0
 
         all_rows: list[LegacyRow] = []
         stats: dict[str, int] = {"btc": 0, "evm": 0, "sol": 0, "unknown": 0}
+        total_processed = 0
         batch_index = 0
         next_after_id = 0
 
@@ -233,7 +245,14 @@ def main(argv: Iterable[str] | None = None) -> int:
             for row in rows:
                 stats[classify_chain(row.blockchain) or "unknown"] += 1
 
-            print(f"Batch {batch_index}: loaded {len(rows)} rows (ids {rows[0].row_id}..{rows[-1].row_id})")
+            if not args.dry_run:
+                transfer_sql = build_transfer_sql(rows, legacy_table)
+                run_psql(conn, transfer_sql)
+                total_processed += len(rows)
+                print(
+                    f"Batch {batch_index}: transferred/deleted {len(rows)} rows "
+                    f"(ids {rows[0].row_id}..{rows[-1].row_id})"
+                )
             next_after_id = rows[-1].row_id
 
         export_xlsx(all_rows, args.excel_output)
@@ -244,13 +263,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             print("Dry-run enabled: deletion skipped.")
             return 0
 
-        deleted_total = 0
-        for i in range(0, len(all_rows), args.batch_size):
-            chunk = all_rows[i : i + args.batch_size]
-            run_psql(conn, build_delete_sql(chunk, legacy_table))
-            deleted_total += len(chunk)
-
-        print(f"Deleted rows from legacy table after successful export: {deleted_total}")
+        print(f"Transferred and deleted rows from legacy table: {total_processed}")
         return 0
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)
