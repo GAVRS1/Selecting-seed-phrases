@@ -24,6 +24,9 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - Manual wallet import mode from a TXT file (`--manual-wallets`) for parser verification.
 - Console output without balance values: `wallet || address || seed`.
 - Optional persistence of generated wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`).
+- Split PostgreSQL schema for BTC/EVM/SOL:
+  - `seed_phrases_btc|evm|sol` store unique seed phrases (no повторов).
+  - `recovered_wallets_btc|evm|sol` store generated wallet rows for balance checking.
 - `.env` support for PostgreSQL settings (`RECOVERY_POSTGRES_CONN`, `RECOVERY_POSTGRES_TABLE`).
 - SQL migrations in `migrations/` with a helper script `scripts/db_migrate.sh`.
 - Basic CLI parser and executable entrypoint.
@@ -187,7 +190,12 @@ python3 scripts/check_wallet_balances.py \
 Опции:
 
 - `--postgres-conn` — строка подключения PostgreSQL (иначе берётся `RECOVERY_POSTGRES_CONN` из `.env`/env).
-- `--postgres-table` — имя таблицы (по умолчанию `recovered_wallets`).
+- `--postgres-table` — legacy режим: одна таблица (по умолчанию `recovered_wallets`).
+- Рекомендуемый режим (новый): 3 таблицы результатов
+  - `--postgres-table-btc` (default `recovered_wallets_btc`)
+  - `--postgres-table-evm` (default `recovered_wallets_evm`)
+  - `--postgres-table-sol` (default `recovered_wallets_sol`)
+- `--chain btc|eth|sol` — запуск только для одной сети/«консоли».
 - `--delay-seconds` — задержка между проверками кошельков (полезно при rate-limit). Если не задана, берётся `RECOVERY_BALANCE_CHECKER_DELAY_SECONDS` из `.env`/env, иначе используется `0.2`.
 - `--output` — путь к файлу для найденных непустых кошельков.
 
