@@ -15,9 +15,14 @@ if not errorlevel 1 (
   set "PYTHON_BIN=py -3"
 )
 
-start "Python balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --output recovered_wallets.txt"
+start "BTC balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --chain btc --output recovered_wallets.txt"
+start "ETH balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --chain eth --output recovered_wallets.txt"
+start "SOL balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --chain sol --output recovered_wallets.txt"
 
-echo Python balance checker started in a separate console.
+echo Started 3 separate checker consoles:
+echo   - BTC table checker
+echo   - ETH ^(EVM^) table checker
+echo   - SOL table checker
 echo Delay between wallet checks is resolved by checker from .env/env ^(RECOVERY_BALANCE_CHECKER_DELAY_SECONDS^) or default 0.2 sec.
 goto :end
 
