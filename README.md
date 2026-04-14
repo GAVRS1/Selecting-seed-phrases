@@ -249,6 +249,52 @@ run_legacy_export.bat 50 legacy_export_001.xlsx
 run_legacy_export.bat 100 legacy_export_preview.xlsx dry-run
 ```
 
+## Экспорт split таблиц `recovered_wallets_btc|evm|sol` в Excel + очистка
+
+Добавлен отдельный скрипт `scripts/export_split_recovered_wallets.py` для текущей split-схемы, где кошельки лежат в трёх таблицах:
+
+- `recovered_wallets_btc`
+- `recovered_wallets_evm`
+- `recovered_wallets_sol`
+
+Что делает за один запуск:
+
+1. Читает **все** строки из каждой таблицы батчами (по `id`, через `--batch-size`).
+2. Создаёт один Excel-файл (`.xlsx`) с листами: `all`, `btc`, `evm`, `sol`, `unknown`.
+3. В листе `all` дополнительно записывает `source_table`, чтобы было видно, из какой таблицы пришла строка.
+4. Если экспорт успешен, удаляет из каждой таблицы только те `id`, которые попали в Excel.
+5. Если экспорт неуспешен, удаление не выполняется (fail-safe).
+
+Запуск:
+
+```bash
+python3 scripts/export_split_recovered_wallets.py \
+  --env-file .env \
+  --table-btc recovered_wallets_btc \
+  --table-evm recovered_wallets_evm \
+  --table-sol recovered_wallets_sol \
+  --batch-size 1000 \
+  --excel-output ./split_export_batch_001.xlsx
+```
+
+Полезные флаги:
+
+- `--dry-run` — только сделать Excel и показать статистику, без удаления в БД.
+- `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
+
+Windows быстрый запуск:
+
+```bat
+run_split_export.bat [batch_size] [excel_output] [dry-run]
+```
+
+Примеры:
+
+```bat
+run_split_export.bat 50 split_export_001.xlsx
+run_split_export.bat 100 split_export_preview.xlsx dry-run
+```
+
 ## Manual wallet check mode
 
 Use this mode when you want to verify parser behavior on known addresses from a text file.
