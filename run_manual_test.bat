@@ -66,7 +66,7 @@ echo [2/3] Building project...
 cmake --build build --config Release
 if errorlevel 1 goto :error
 
-echo [3/3] Running manual wallet check via Python...
+echo [3/3] Starting 3 manual checker consoles ^(BTC/ETH/SOL^) via Python...
 if not exist recovered_wallets.txt (
   type nul > recovered_wallets.txt
 )
@@ -75,20 +75,33 @@ if not exist data (
   mkdir data
 )
 
-if not exist data\manual_wallets.txt (
-  > data\manual_wallets.txt echo # Format: chain,address
-  >>data\manual_wallets.txt echo # btc,1BoatSLRHtKNngkdXEeobR76b53LETtpyT
-  >>data\manual_wallets.txt echo # eth,0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe
-  >>data\manual_wallets.txt echo # sol,Vote111111111111111111111111111111111111111
-  >>data\manual_wallets.txt echo # ton,0:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  echo Created data\manual_wallets.txt example file.
+if not exist data\manual_wallets_btc.txt (
+  > data\manual_wallets_btc.txt echo # Format: chain,address
+  >>data\manual_wallets_btc.txt echo # btc,1BoatSLRHtKNngkdXEeobR76b53LETtpyT
+  echo Created data\manual_wallets_btc.txt example file.
 )
 
-%PYTHON_BIN% scripts\check_wallet_balances.py --manual-wallets "data\manual_wallets.txt" --output "recovered_wallets.txt" --delay-seconds 0.2
-if errorlevel 1 goto :error
+if not exist data\manual_wallets_eth.txt (
+  > data\manual_wallets_eth.txt echo # Format: chain,address
+  >>data\manual_wallets_eth.txt echo # eth,0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe
+  echo Created data\manual_wallets_eth.txt example file.
+)
+
+if not exist data\manual_wallets_sol.txt (
+  > data\manual_wallets_sol.txt echo # Format: chain,address
+  >>data\manual_wallets_sol.txt echo # sol,Vote111111111111111111111111111111111111111
+  echo Created data\manual_wallets_sol.txt example file.
+)
+
+start "Manual BTC checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --manual-wallets data\manual_wallets_btc.txt --output recovered_wallets.txt --delay-seconds 0.2"
+start "Manual ETH checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --manual-wallets data\manual_wallets_eth.txt --output recovered_wallets.txt --delay-seconds 0.2"
+start "Manual SOL checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --manual-wallets data\manual_wallets_sol.txt --output recovered_wallets.txt --delay-seconds 0.2"
 
 echo.
-echo Manual wallet check finished.
+echo Started 3 manual checker consoles:
+echo   - BTC from data\manual_wallets_btc.txt
+echo   - ETH from data\manual_wallets_eth.txt
+echo   - SOL from data\manual_wallets_sol.txt
 goto :end
 
 :error
