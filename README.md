@@ -282,19 +282,6 @@ python3 scripts/export_split_recovered_wallets.py \
 - `--dry-run` — только сделать Excel и показать статистику, без удаления в БД.
 - `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
 
-Windows быстрый запуск:
-
-```bat
-run_split_export.bat [batch_size] [excel_output] [dry-run]
-```
-
-Примеры:
-
-```bat
-run_split_export.bat 50 split_export_001.xlsx
-run_split_export.bat 100 split_export_preview.xlsx dry-run
-```
-
 ## Manual wallet check mode
 
 Use this mode when you want to verify parser behavior on known addresses from a text file.
