@@ -1,6 +1,7 @@
 #include "bip39/mnemonic_generator.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <numeric>
 #include <random>
 #include <stdexcept>
@@ -49,6 +50,7 @@ std::size_t MnemonicGenerator::generate(
     std::size_t produced = 0;
     core::Mnemonic current = pattern;
     std::vector<std::vector<std::string>> choices_by_position(current.size());
+    std::vector<std::size_t> wildcard_positions;
 
     const std::uint64_t effective_seed =
         shuffle_seed_.has_value() ? *shuffle_seed_ : static_cast<std::uint64_t>(std::random_device{}());
@@ -58,39 +60,84 @@ std::size_t MnemonicGenerator::generate(
         if (current[pos] != "*") {
             continue;
         }
+        wildcard_positions.push_back(pos);
         choices_by_position[pos] = allow_words_;
         std::shuffle(choices_by_position[pos].begin(), choices_by_position[pos].end(), seed_rng);
     }
 
-    std::function<bool(std::size_t)> dfs = [&](std::size_t pos) {
-        if (max_candidates > 0 && produced >= max_candidates) {
-            return true;
+    if (wildcard_positions.empty()) {
+        if (validator.validate(current)) {
+            ++produced;
+            on_valid_candidate(current);
         }
+        return produced;
+    }
 
-        if (pos == current.size()) {
-            if (validator.validate(current)) {
-                ++produced;
-                return on_valid_candidate(current);
-            }
-            return false;
-        }
+    // Shuffle wildcard traversal order so consecutive candidates do not only vary
+    // near the tail of the mnemonic.
+    std::vector<std::size_t> traversal_positions = wildcard_positions;
+    std::shuffle(traversal_positions.begin(), traversal_positions.end(), seed_rng);
 
-        if (current[pos] != "*") {
-            return dfs(pos + 1);
+    const std::size_t base = allow_words_.size();
+    if (base == 1) {
+        for (const std::size_t pos : traversal_positions) {
+            current[pos] = choices_by_position[pos][0];
         }
+        if (validator.validate(current)) {
+            ++produced;
+            on_valid_candidate(current);
+        }
+        return produced;
+    }
 
-        const auto& choices = choices_by_position[pos];
-        for (const auto& candidate_word : choices) {
-            current[pos] = candidate_word;
-            if (dfs(pos + 1)) {
-                return true;
-            }
-        }
-        current[pos] = "*";
-        return false;
+    const auto random_digit = [&](std::size_t upper_exclusive) -> std::size_t {
+        std::uniform_int_distribution<std::size_t> dist(0, upper_exclusive - 1);
+        return dist(seed_rng);
     };
 
-    dfs(0);
+    std::vector<std::size_t> start_digits(traversal_positions.size(), 0);
+    std::vector<std::size_t> index_digits(traversal_positions.size(), 0);
+    std::vector<std::size_t> step_digits(traversal_positions.size(), 0);
+    for (std::size_t i = 0; i < traversal_positions.size(); ++i) {
+        start_digits[i] = random_digit(base);
+    }
+    index_digits = start_digits;
+
+    do {
+        for (std::size_t i = 0; i < traversal_positions.size(); ++i) {
+            step_digits[i] = random_digit(base);
+        }
+    } while (std::all_of(step_digits.begin(), step_digits.end(), [](std::size_t value) { return value == 0; }) ||
+             std::gcd(step_digits[0], base) != 1);
+
+    bool completed_full_cycle = false;
+    while (!completed_full_cycle) {
+        if (max_candidates > 0 && produced >= max_candidates) {
+            break;
+        }
+
+        for (std::size_t i = 0; i < traversal_positions.size(); ++i) {
+            const std::size_t pos = traversal_positions[i];
+            const std::size_t choice_index = index_digits[i];
+            current[pos] = choices_by_position[pos][choice_index];
+        }
+
+        if (validator.validate(current)) {
+            ++produced;
+            if (on_valid_candidate(current)) {
+                break;
+            }
+        }
+
+        std::size_t carry = 0;
+        for (std::size_t i = 0; i < index_digits.size(); ++i) {
+            const std::size_t sum = index_digits[i] + step_digits[i] + carry;
+            index_digits[i] = sum % base;
+            carry = sum / base;
+        }
+        completed_full_cycle = (index_digits == start_digits);
+    }
+
     return produced;
 }
 
