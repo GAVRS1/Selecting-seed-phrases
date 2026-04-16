@@ -4,7 +4,65 @@ import { UIService } from './services/UIService';
 import { WalletChecker } from './services/WalletChecker';
 import { AllNetworksChecker } from './services/AllNetworksChecker';
 import { DatabaseWalletRepository } from './services/DatabaseWalletRepository';
-import { Network } from './types';
+import { AllNetworksCheckResult, Network, WalletBalance, WalletData } from './types';
+import fs from 'fs';
+import path from 'path';
+
+const RECOVERED_OUTPUT_PATH = path.resolve(process.cwd(), 'recovered_wallets.txt');
+
+function isPositiveBalance(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function formatEthBalance(value: string | undefined): string {
+  if (!value || !Number.isFinite(Number(value))) {
+    return 'ETH:0';
+  }
+
+  return `ETH:${value}`;
+}
+
+function appendRecoveredWallets(rows: string[]): void {
+  if (rows.length === 0) {
+    return;
+  }
+  fs.appendFileSync(RECOVERED_OUTPUT_PATH, `${rows.join('\n')}\n`, 'utf-8');
+}
+
+function buildRecoveredLine(wallet: WalletData, displayBalance: string): string {
+  return `eth/${wallet.address}/${wallet.mnemonic || 'test'}/${displayBalance}`;
+}
+
+function collectRecoveredFromSingleNetwork(results: WalletBalance[]): string[] {
+  return results
+    .filter((result) => isPositiveBalance(result.balances.get('native')))
+    .map((result) => buildRecoveredLine(result.wallet, formatEthBalance(result.balances.get('native'))));
+}
+
+function collectRecoveredFromAllNetworks(allResults: AllNetworksCheckResult[], wallets: WalletData[]): string[] {
+  const nativeBalanceByAddress = new Map<string, string>();
+  for (const networkResult of allResults) {
+    for (const result of networkResult.results) {
+      if (!isPositiveBalance(result.balances.get('native'))) {
+        continue;
+      }
+      const address = result.wallet.address.toLowerCase();
+      if (!nativeBalanceByAddress.has(address)) {
+        nativeBalanceByAddress.set(address, result.balances.get('native') || '0');
+      }
+    }
+  }
+
+  return wallets
+    .filter((wallet) => nativeBalanceByAddress.has(wallet.address.toLowerCase()))
+    .map((wallet) =>
+      buildRecoveredLine(wallet, formatEthBalance(nativeBalanceByAddress.get(wallet.address.toLowerCase())))
+    );
+}
 
 async function main(): Promise<void> {
   const configManager = new ConfigManager();
@@ -64,6 +122,14 @@ async function main(): Promise<void> {
         options: checker.getStats() as any,
       } as any, checker.getTokenHeaders());
 
+      const recoveredRows = collectRecoveredFromSingleNetwork(results);
+      appendRecoveredWallets(recoveredRows);
+      if (recoveredRows.length > 0) {
+        ui.showSuccess(`Добавлено в recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
+      } else {
+        ui.showWarning('Кошельки с положительным ETH балансом не найдены.');
+      }
+
       checkedWalletIds = wallets
         .filter((wallet) => results.some((r) => r.wallet.address.toLowerCase() === wallet.address.toLowerCase()))
         .map((wallet) => wallet.id)
@@ -72,6 +138,13 @@ async function main(): Promise<void> {
       const allChecker = new AllNetworksChecker(wallets, configManager, ui);
       const allResults = await allChecker.checkAllNetworks();
       await exporter.exportAllNetworks(allResults);
+      const recoveredRows = collectRecoveredFromAllNetworks(allResults, wallets);
+      appendRecoveredWallets(recoveredRows);
+      if (recoveredRows.length > 0) {
+        ui.showSuccess(`Добавлено в recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
+      } else {
+        ui.showWarning('Кошельки с положительным ETH балансом не найдены.');
+      }
 
       checkedWalletIds = wallets
         .map((wallet) => wallet.id)

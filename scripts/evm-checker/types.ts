@@ -69,6 +69,7 @@ export interface WalletData {
   id?: number;
   address: string;
   privateKey?: string;
+  mnemonic?: string;
 }
 
 
