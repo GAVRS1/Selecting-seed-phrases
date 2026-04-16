@@ -19,6 +19,14 @@ function appendRecovered(rows: string[]): void {
   fs.appendFileSync(RECOVERED_OUTPUT_PATH, `${rows.join('\n')}\n`, 'utf-8');
 }
 
+function collectSuccessfulIds(rows: { wallet: { id?: number }; errors?: Map<string, Error> }[]): number[] {
+  const ids = rows
+    .filter((row) => (row.errors?.size || 0) === 0)
+    .map((row) => row.wallet.id)
+    .filter((id): id is number => typeof id === 'number');
+  return [...new Set(ids)];
+}
+
 async function main(): Promise<void> {
   const configManager = new ConfigManager();
   const appConfig = configManager.getAppConfig();
@@ -47,12 +55,13 @@ async function main(): Promise<void> {
     ui.showInfo(`Загружено из БД: ${wallets.length} кошельков`);
 
     const mode = (process.argv[2] || 'solana').toLowerCase();
-    const checkedIds = wallets.map((wallet) => wallet.id).filter((id): id is number => typeof id === 'number');
+    let checkedIds: number[] = [];
 
     if (mode === 'all') {
       const allChecker = new AllNetworksChecker(wallets, configManager, ui);
       const allResults = await allChecker.checkAllNetworks();
       await exporter.exportAllNetworks(allResults);
+      checkedIds = collectSuccessfulIds(allResults.flatMap((result) => result.results));
 
       const recovered = allResults[0]?.results
         .filter((row) => isPositive(row.balances.get('native')))
@@ -82,6 +91,7 @@ async function main(): Promise<void> {
 
       const results = await checker.check();
       await exporter.exportSingleNetwork(results, { network, wallets, tokens: networkConfig.tokens, options: {} }, checker.getTokenHeaders());
+      checkedIds = collectSuccessfulIds(results);
 
       const recovered = results
         .filter((row) => isPositive(row.balances.get('native')))
