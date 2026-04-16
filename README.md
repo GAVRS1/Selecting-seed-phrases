@@ -201,17 +201,14 @@ python3 scripts/check_wallet_balances.py \
 - `--delay-seconds` — задержка между проверками кошельков (полезно при rate-limit). Если не задана, берётся `RECOVERY_BALANCE_CHECKER_DELAY_SECONDS` из `.env`/env, иначе используется `0.2`.
 - `--output` — путь к файлу для найденных непустых кошельков.
 
-Файлы в `data/` для RPC и контрактов (основной способ настройки):
+Дополнительные RPC-переменные для снижения rate-limit и более полного анализа активов:
 
-- `data/evm_rpc_urls.txt` — список EVM RPC (по одному URL в строке).
-- `data/evm_token_contracts.txt` — список ERC-20 контрактов для доп. проверки через `eth_call`.
-- `data/sol_rpc_urls.txt` — список Solana RPC (по одному URL в строке).
-
-Резервные env-переменные (если нужно переопределить пути/значения):
-
-- `RECOVERY_EVM_RPC_FILE` / `RECOVERY_EVM_RPC_URLS` / `RECOVERY_ETH_RPC_URL`
-- `RECOVERY_EVM_TOKEN_CONTRACTS_FILE` / `RECOVERY_EVM_TOKEN_CONTRACTS`
-- `RECOVERY_SOL_RPC_FILE` / `RECOVERY_SOL_RPC_URLS` / `RECOVERY_SOL_RPC_URL`
+- `RECOVERY_EVM_RPC_URLS` — список EVM RPC через запятую/`;`/перенос строки.  
+  Пример:  
+  `RECOVERY_EVM_RPC_URLS=https://eth-mainnet.g.alchemy.com/v2/KEY_A,https://mainnet.infura.io/v3/KEY_B`
+- `RECOVERY_ETH_RPC_URL` — fallback RPC, если `RECOVERY_EVM_RPC_URLS` не задан.
+- `RECOVERY_EVM_TOKEN_CONTRACTS` — доп. список ERC-20 контрактов для проверки через `eth_call` (если ваш RPC не поддерживает `alchemy_getTokenBalances`).
+- `RECOVERY_SOL_RPC_URL` — RPC endpoint для Solana (по умолчанию `https://api.mainnet-beta.solana.com`).
 
 Как работает распределение запросов по EVM RPC:
 

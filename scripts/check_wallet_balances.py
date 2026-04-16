@@ -54,7 +54,6 @@ NETWORK_OPENER: urllib.request.OpenerDirector | None = None
 PROXY_ROTATOR: "ProxyRotator | None" = None
 ETH_RPC_URL: str = DEFAULT_ETH_RPC_URL
 SOL_RPC_URL: str = DEFAULT_SOL_RPC_URL
-SOL_RPC_URLS: list[str] = [DEFAULT_SOL_RPC_URL]
 EVM_RPC_URLS: list[str] = [DEFAULT_ETH_RPC_URL]
 EVM_TOKEN_CONTRACTS: list[str] = []
 
@@ -237,19 +236,6 @@ def parse_csv_env(value: str | None) -> list[str]:
     return chunks
 
 
-def load_text_items(path: str) -> list[str]:
-    if not os.path.isfile(path):
-        return []
-    values: list[str] = []
-    with open(path, "r", encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            values.append(line)
-    return values
-
-
 def build_proxy_url(proxy_raw: str) -> str:
     proxy_parts = proxy_raw.strip().split(":")
     if len(proxy_parts) not in (2, 4):
@@ -354,59 +340,28 @@ def open_url(req: urllib.request.Request):
 
 
 def configure_network(env_file: str) -> None:
-    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL, SOL_RPC_URL, SOL_RPC_URLS, EVM_RPC_URLS, EVM_TOKEN_CONTRACTS  # noqa: PLW0603
+    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL, SOL_RPC_URL, EVM_RPC_URLS, EVM_TOKEN_CONTRACTS  # noqa: PLW0603
     env_values = parse_env_file(env_file)
     ETH_RPC_URL = (
         os.environ.get("RECOVERY_ETH_RPC_URL")
         or env_values.get("RECOVERY_ETH_RPC_URL")
         or DEFAULT_ETH_RPC_URL
     )
-
-    evm_rpc_file_path = (
-        os.environ.get("RECOVERY_EVM_RPC_FILE")
-        or env_values.get("RECOVERY_EVM_RPC_FILE")
-        or EVM_RPC_FILE_PATH
+    SOL_RPC_URL = (
+        os.environ.get("RECOVERY_SOL_RPC_URL")
+        or env_values.get("RECOVERY_SOL_RPC_URL")
+        or DEFAULT_SOL_RPC_URL
     )
-    EVM_RPC_URLS = load_text_items(evm_rpc_file_path)
-    if not EVM_RPC_URLS:
-        EVM_RPC_URLS = parse_csv_env(
+    EVM_RPC_URLS = parse_csv_env(
         os.environ.get("RECOVERY_EVM_RPC_URLS")
         or env_values.get("RECOVERY_EVM_RPC_URLS")
-        )
+    )
     if not EVM_RPC_URLS:
         EVM_RPC_URLS = [ETH_RPC_URL]
-
-    evm_contracts_file_path = (
-        os.environ.get("RECOVERY_EVM_TOKEN_CONTRACTS_FILE")
-        or env_values.get("RECOVERY_EVM_TOKEN_CONTRACTS_FILE")
-        or EVM_TOKEN_CONTRACTS_FILE_PATH
+    EVM_TOKEN_CONTRACTS = parse_csv_env(
+        os.environ.get("RECOVERY_EVM_TOKEN_CONTRACTS")
+        or env_values.get("RECOVERY_EVM_TOKEN_CONTRACTS")
     )
-    EVM_TOKEN_CONTRACTS = load_text_items(evm_contracts_file_path)
-    if not EVM_TOKEN_CONTRACTS:
-        EVM_TOKEN_CONTRACTS = parse_csv_env(
-            os.environ.get("RECOVERY_EVM_TOKEN_CONTRACTS")
-            or env_values.get("RECOVERY_EVM_TOKEN_CONTRACTS")
-        )
-
-    sol_rpc_file_path = (
-        os.environ.get("RECOVERY_SOL_RPC_FILE")
-        or env_values.get("RECOVERY_SOL_RPC_FILE")
-        or SOL_RPC_FILE_PATH
-    )
-    SOL_RPC_URLS = load_text_items(sol_rpc_file_path)
-    if not SOL_RPC_URLS:
-        SOL_RPC_URLS = parse_csv_env(
-            os.environ.get("RECOVERY_SOL_RPC_URLS")
-            or env_values.get("RECOVERY_SOL_RPC_URLS")
-        )
-    if not SOL_RPC_URLS:
-        SOL_RPC_URLS = [
-            os.environ.get("RECOVERY_SOL_RPC_URL")
-            or env_values.get("RECOVERY_SOL_RPC_URL")
-            or DEFAULT_SOL_RPC_URL
-        ]
-    SOL_RPC_URL = SOL_RPC_URLS[0]
-
     proxy_enabled = parse_bool_env(
         os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED")
         or env_values.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED"),
@@ -443,14 +398,6 @@ def evm_rpc_urls_for_wallet(address: str) -> list[str]:
     return EVM_RPC_URLS[start:] + EVM_RPC_URLS[:start]
 
 
-def sol_rpc_urls_for_wallet(address: str) -> list[str]:
-    if not SOL_RPC_URLS:
-        return [SOL_RPC_URL]
-    digest = hashlib.sha256(address.encode("utf-8")).digest()
-    start = int.from_bytes(digest[:4], byteorder="big") % len(SOL_RPC_URLS)
-    return SOL_RPC_URLS[start:] + SOL_RPC_URLS[:start]
-
-
 def evm_rpc_request(address: str, method: str, params: list, *, allow_method_fallback: bool = False) -> dict:
     last_error: Exception | None = None
     for rpc_url in evm_rpc_urls_for_wallet(address):
@@ -472,26 +419,6 @@ def evm_rpc_request(address: str, method: str, params: list, *, allow_method_fal
     if last_error is not None:
         raise last_error
     raise RuntimeError(f"Cannot execute RPC request method={method}")
-
-
-def sol_rpc_request(address: str, method: str, params: list) -> dict:
-    last_error: Exception | None = None
-    for rpc_url in sol_rpc_urls_for_wallet(address):
-        payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
-        try:
-            response = request_json(rpc_url, payload)
-        except Exception as exc:  # noqa: BLE001 - failover between independent RPC providers
-            last_error = exc
-            continue
-
-        if "error" in response:
-            last_error = RuntimeError(f"SOL RPC {rpc_url} returned error for {method}: {response['error']}")
-            continue
-        return response
-
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError(f"Cannot execute SOL RPC request method={method}")
 
 
 def evm_eth_call(address: str, to: str, data: str) -> str:
@@ -633,7 +560,13 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
 
 
 def balance_sol(address: str) -> Decimal:
-    result_native = sol_rpc_request(address, "getBalance", [address])
+    payload_native = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getBalance",
+        "params": [address],
+    }
+    result_native = request_json(SOL_RPC_URL, payload_native)
     lamports = result_native.get("result", {}).get("value")
     if lamports is None:
         raise RuntimeError(f"Unexpected SOL RPC response: {result_native}")
@@ -642,15 +575,17 @@ def balance_sol(address: str) -> Decimal:
 
 def balance_sol_with_tokens(address: str) -> tuple[Decimal, str, bool]:
     native_sol = balance_sol(address)
-    result_tokens = sol_rpc_request(
-        address,
-        "getTokenAccountsByOwner",
-        [
+    payload_tokens = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTokenAccountsByOwner",
+        "params": [
             address,
             {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
             {"encoding": "jsonParsed"},
         ],
-    )
+    }
+    result_tokens = request_json(SOL_RPC_URL, payload_tokens)
     token_chunks: list[str] = []
     token_rows = result_tokens.get("result", {}).get("value", [])
     for token_row in token_rows:
@@ -844,7 +779,7 @@ def main() -> int:
             raise ValueError("--delay-seconds must be >= 0")
 
         print(f"[INFO] EVM RPC endpoints loaded: {len(EVM_RPC_URLS)}")
-        print(f"[INFO] SOL RPC endpoints loaded: {len(SOL_RPC_URLS)}")
+        print(f"[INFO] SOL RPC endpoint: {SOL_RPC_URL}")
         if EVM_TOKEN_CONTRACTS:
             print(f"[INFO] Extra EVM token contracts configured: {len(EVM_TOKEN_CONTRACTS)}")
         print(f"[INFO] Checker delay between wallets: {delay_seconds} sec")
