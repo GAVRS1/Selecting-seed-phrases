@@ -16,13 +16,13 @@ if not errorlevel 1 (
 )
 
 start "BTC balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --chain btc --output recovered_wallets.txt"
-start "SOL balance checker" cmd /k "%PYTHON_BIN% scripts\check_wallet_balances.py --env-file .env --chain sol --output recovered_wallets.txt"
-start "EVM all-networks checker" cmd /k "npm --prefix scripts\evm-checker start -- all"
+start "EVM all-networks checker" cmd /k "set POSTGRES_CONN=%RECOVERY_POSTGRES_CONN%&& npm --prefix scripts\evm-checker start -- all"
+start "SOL checker" cmd /k "set POSTGRES_CONN=%RECOVERY_POSTGRES_CONN%&& npm --prefix scripts\solana-checker start -- all"
 
 echo Started 3 separate checker consoles:
 echo   - BTC table checker
-echo   - SOL table checker
 echo   - EVM all-networks checker
+echo   - SOL all-networks checker
 echo Delay between wallet checks is resolved by checker from .env/env ^(RECOVERY_BALANCE_CHECKER_DELAY_SECONDS^) or default 0.2 sec.
 goto :end
 
