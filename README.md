@@ -172,6 +172,8 @@ If you need another table name, set `RECOVERY_POSTGRES_TABLE` in `.env` or use `
 
 1. Берёт кошельки из таблицы PostgreSQL (`id, blockchain, address, mnemonic`).
 2. Проверяет баланс по сети (`btc`, `eth`, `sol`, `ton`).
+   - `eth`: нативный ETH + ERC-20 через RPC (без Ethplorer).
+   - `sol`: нативный SOL + SPL-токены через RPC.
 3. Для каждого успешно проверенного кошелька сначала печатает в консоль строку:
    `blockchain/address/mnemonic/balance`.
 4. Если баланс больше нуля (или для ETH есть ERC-20 токены) — добавляет строку в `recovered_wallets.txt` в формате:
@@ -198,6 +200,23 @@ python3 scripts/check_wallet_balances.py \
 - `--chain btc|eth|sol` — запуск только для одной сети/«консоли».
 - `--delay-seconds` — задержка между проверками кошельков (полезно при rate-limit). Если не задана, берётся `RECOVERY_BALANCE_CHECKER_DELAY_SECONDS` из `.env`/env, иначе используется `0.2`.
 - `--output` — путь к файлу для найденных непустых кошельков.
+
+Файлы в `data/` для RPC и контрактов (основной способ настройки):
+
+- `data/evm_rpc_urls.txt` — список EVM RPC (по одному URL в строке).
+- `data/evm_token_contracts.txt` — список ERC-20 контрактов для доп. проверки через `eth_call`.
+- `data/sol_rpc_urls.txt` — список Solana RPC (по одному URL в строке).
+
+Резервные env-переменные (если нужно переопределить пути/значения):
+
+- `RECOVERY_EVM_RPC_FILE` / `RECOVERY_EVM_RPC_URLS` / `RECOVERY_ETH_RPC_URL`
+- `RECOVERY_EVM_TOKEN_CONTRACTS_FILE` / `RECOVERY_EVM_TOKEN_CONTRACTS`
+- `RECOVERY_SOL_RPC_FILE` / `RECOVERY_SOL_RPC_URLS` / `RECOVERY_SOL_RPC_URL`
+
+Как работает распределение запросов по EVM RPC:
+
+- Для каждого кошелька выбирается «свой» стартовый RPC (deterministic hash от адреса), чтобы равномерно распределить нагрузку.
+- Если RPC отвечает ошибкой/таймаутом, checker автоматически пробует следующий endpoint из списка.
 
 Прокси для Python-чекера (только `scripts/check_wallet_balances.py`):
 
