@@ -43,10 +43,9 @@ MAX_PROXY_ATTEMPTS = 3
 DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
 DEFAULT_SOL_RPC_URL = "https://api.mainnet-beta.solana.com"
 DEFAULT_DELAY_SECONDS = 0.2
-SUPPORTED_RESULT_CHAINS = ("btc", "eth", "sol")
+SUPPORTED_RESULT_CHAINS = ("btc", "sol")
 DEFAULT_RESULT_TABLE_BY_CHAIN = {
     "btc": "recovered_wallets_btc",
-    "eth": "recovered_wallets_evm",
     "sol": "recovered_wallets_sol",
 }
 
@@ -140,14 +139,12 @@ def resolve_result_tables(
     env_file: str,
     *,
     cli_table_btc: str,
-    cli_table_evm: str,
     cli_table_sol: str,
 ) -> dict[str, str]:
     env_values = parse_env_file(env_file)
     table_btc = cli_table_btc or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_BTC") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_BTC") or DEFAULT_RESULT_TABLE_BY_CHAIN["btc"]
-    table_evm = cli_table_evm or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_EVM") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_EVM") or DEFAULT_RESULT_TABLE_BY_CHAIN["eth"]
     table_sol = cli_table_sol or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_SOL") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_SOL") or DEFAULT_RESULT_TABLE_BY_CHAIN["sol"]
-    by_chain = {"btc": table_btc, "eth": table_evm, "sol": table_sol}
+    by_chain = {"btc": table_btc, "sol": table_sol}
     for chain, table in by_chain.items():
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
             raise ValueError(f"Invalid PostgreSQL table name for {chain}: {table}")
@@ -622,9 +619,6 @@ def fetch_balance(blockchain: str, address: str) -> BalanceCheckResult:
     if blockchain == "btc":
         amount = balance_btc(address)
         return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=8), has_assets=amount > 0)
-    if blockchain == "eth":
-        amount, display, has_assets = balance_eth(address)
-        return BalanceCheckResult(amount=amount, display=display, has_assets=has_assets)
     if blockchain == "sol":
         amount, display, has_assets = balance_sol_with_tokens(address)
         return BalanceCheckResult(amount=amount, display=display, has_assets=has_assets)
@@ -737,13 +731,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--postgres-conn", help="PostgreSQL connection string. Defaults to RECOVERY_POSTGRES_CONN from .env/env")
     parser.add_argument("--postgres-table", default="", help="PostgreSQL table with wallet records (default: recovered_wallets)")
     parser.add_argument("--postgres-table-btc", default="", help="PostgreSQL BTC result table (default: recovered_wallets_btc)")
-    parser.add_argument("--postgres-table-evm", default="", help="PostgreSQL EVM/ETH result table (default: recovered_wallets_evm)")
     parser.add_argument("--postgres-table-sol", default="", help="PostgreSQL SOL result table (default: recovered_wallets_sol)")
     parser.add_argument(
         "--chain",
         choices=SUPPORTED_RESULT_CHAINS,
         default="",
-        help="Check only one chain console (btc|eth|sol). By default checks all 3 tables sequentially.",
+        help="Check only one chain console (btc|sol). By default checks BTC and SOL tables sequentially.",
     )
     parser.add_argument("--env-file", default=".env", help="Path to env file (default: .env)")
     parser.add_argument("--output", default="recovered_wallets.txt", help="Output file for non-empty wallets")
@@ -795,7 +788,6 @@ def main() -> int:
         tables_by_chain = resolve_result_tables(
             args.env_file,
             cli_table_btc=args.postgres_table_btc,
-            cli_table_evm=args.postgres_table_evm,
             cli_table_sol=args.postgres_table_sol,
         )
         if args.chain:

@@ -22,7 +22,7 @@ export class DatabaseWalletRepository {
 
   async fetchBatch(): Promise<DbWalletRow[]> {
     const sql = `
-      SELECT id, address
+      SELECT id, address, mnemonic
       FROM ${this.table}
       ORDER BY id
       LIMIT $1
@@ -33,6 +33,7 @@ export class DatabaseWalletRepository {
     return result.rows.map((row) => ({
       id: Number(row.id),
       address: String(row.address),
+      mnemonic: row.mnemonic ? String(row.mnemonic) : undefined,
     }));
   }
 
