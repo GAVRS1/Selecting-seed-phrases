@@ -6,6 +6,7 @@ import { SplTokenBalanceProvider, SolNativeBalanceProvider } from './BalanceServ
 import { UIService } from './UIService';
 
 export class WalletChecker {
+  private static readonly RPC_MAX_BATCH_SIZE = 100;
   private readonly stats: CheckerStats;
   private readonly startTime: number;
   private readonly ui = new UIService();
@@ -95,7 +96,8 @@ export class WalletChecker {
     provider: SolNativeBalanceProvider | SplTokenBalanceProvider,
     addresses: string[]
   ): Promise<Map<string, string>> {
-    const batchSize = this.config.options?.batchSize || 100;
+    const configuredBatchSize = this.config.options?.batchSize || WalletChecker.RPC_MAX_BATCH_SIZE;
+    const batchSize = Math.min(configuredBatchSize, WalletChecker.RPC_MAX_BATCH_SIZE);
     const batches: string[][] = [];
 
     for (let i = 0; i < addresses.length; i += batchSize) {
