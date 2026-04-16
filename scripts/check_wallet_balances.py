@@ -14,6 +14,7 @@ Rows whose balances cannot be checked (API/network error) are not deleted in Pos
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.client
 import json
 import os
@@ -35,6 +36,7 @@ DEFAULT_PROXY_ENABLED = False
 PROXY_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "proxies.txt"))
 MAX_PROXY_ATTEMPTS = 3
 DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
+DEFAULT_SOL_RPC_URL = "https://api.mainnet-beta.solana.com"
 DEFAULT_DELAY_SECONDS = 0.2
 SUPPORTED_RESULT_CHAINS = ("btc", "eth", "sol")
 DEFAULT_RESULT_TABLE_BY_CHAIN = {
@@ -46,6 +48,9 @@ DEFAULT_RESULT_TABLE_BY_CHAIN = {
 NETWORK_OPENER: urllib.request.OpenerDirector | None = None
 PROXY_ROTATOR: "ProxyRotator | None" = None
 ETH_RPC_URL: str = DEFAULT_ETH_RPC_URL
+SOL_RPC_URL: str = DEFAULT_SOL_RPC_URL
+EVM_RPC_URLS: list[str] = [DEFAULT_ETH_RPC_URL]
+EVM_TOKEN_CONTRACTS: list[str] = []
 
 
 @dataclass(frozen=True)
@@ -214,6 +219,18 @@ def parse_non_negative_float(value: str | None, *, default: float) -> float:
     return parsed
 
 
+def parse_csv_env(value: str | None) -> list[str]:
+    if value is None:
+        return []
+    chunks: list[str] = []
+    normalized = value.replace("\n", ",").replace(";", ",")
+    for chunk in normalized.split(","):
+        token = chunk.strip()
+        if token:
+            chunks.append(token)
+    return chunks
+
+
 def build_proxy_url(proxy_raw: str) -> str:
     proxy_parts = proxy_raw.strip().split(":")
     if len(proxy_parts) not in (2, 4):
@@ -318,12 +335,27 @@ def open_url(req: urllib.request.Request):
 
 
 def configure_network(env_file: str) -> None:
-    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL  # noqa: PLW0603
+    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL, SOL_RPC_URL, EVM_RPC_URLS, EVM_TOKEN_CONTRACTS  # noqa: PLW0603
     env_values = parse_env_file(env_file)
     ETH_RPC_URL = (
         os.environ.get("RECOVERY_ETH_RPC_URL")
         or env_values.get("RECOVERY_ETH_RPC_URL")
         or DEFAULT_ETH_RPC_URL
+    )
+    SOL_RPC_URL = (
+        os.environ.get("RECOVERY_SOL_RPC_URL")
+        or env_values.get("RECOVERY_SOL_RPC_URL")
+        or DEFAULT_SOL_RPC_URL
+    )
+    EVM_RPC_URLS = parse_csv_env(
+        os.environ.get("RECOVERY_EVM_RPC_URLS")
+        or env_values.get("RECOVERY_EVM_RPC_URLS")
+    )
+    if not EVM_RPC_URLS:
+        EVM_RPC_URLS = [ETH_RPC_URL]
+    EVM_TOKEN_CONTRACTS = parse_csv_env(
+        os.environ.get("RECOVERY_EVM_TOKEN_CONTRACTS")
+        or env_values.get("RECOVERY_EVM_TOKEN_CONTRACTS")
     )
     proxy_enabled = parse_bool_env(
         os.environ.get("RECOVERY_BALANCE_CHECKER_PROXY_ENABLED")
@@ -344,6 +376,140 @@ def format_decimal(value: Decimal, *, precision: int = 18) -> str:
     return format(quantized, "f")
 
 
+def normalize_hex_address(address: str) -> str:
+    normalized = address.strip().lower()
+    if normalized.startswith("0x"):
+        normalized = normalized[2:]
+    if len(normalized) != 40 or not re.fullmatch(r"[0-9a-f]{40}", normalized):
+        raise ValueError(f"Invalid EVM address: {address}")
+    return f"0x{normalized}"
+
+
+def evm_rpc_urls_for_wallet(address: str) -> list[str]:
+    if not EVM_RPC_URLS:
+        return [ETH_RPC_URL]
+    digest = hashlib.sha256(address.encode("utf-8")).digest()
+    start = int.from_bytes(digest[:4], byteorder="big") % len(EVM_RPC_URLS)
+    return EVM_RPC_URLS[start:] + EVM_RPC_URLS[:start]
+
+
+def evm_rpc_request(address: str, method: str, params: list, *, allow_method_fallback: bool = False) -> dict:
+    last_error: Exception | None = None
+    for rpc_url in evm_rpc_urls_for_wallet(address):
+        payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
+        try:
+            response = request_json(rpc_url, payload)
+        except Exception as exc:  # noqa: BLE001 - failover between independent RPC providers
+            last_error = exc
+            continue
+
+        if "error" in response:
+            code = response.get("error", {}).get("code")
+            if allow_method_fallback and code in (-32601, -32602):
+                return response
+            last_error = RuntimeError(f"RPC {rpc_url} returned error for {method}: {response['error']}")
+            continue
+        return response
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Cannot execute RPC request method={method}")
+
+
+def evm_eth_call(address: str, to: str, data: str) -> str:
+    result = evm_rpc_request(
+        address,
+        "eth_call",
+        [{"to": to, "data": data}, "latest"],
+    ).get("result")
+    if not isinstance(result, str):
+        raise RuntimeError(f"Unexpected eth_call result for {to}: {result!r}")
+    return result
+
+
+def decode_symbol(symbol_hex: str) -> str:
+    raw = symbol_hex[2:] if symbol_hex.startswith("0x") else symbol_hex
+    if not raw:
+        return "TOKEN"
+    try:
+        data = bytes.fromhex(raw)
+    except ValueError:
+        return "TOKEN"
+
+    # dynamic string ABI
+    if len(data) >= 96:
+        offset = int.from_bytes(data[:32], "big")
+        if offset + 32 <= len(data):
+            length = int.from_bytes(data[offset : offset + 32], "big")
+            start = offset + 32
+            end = start + length
+            if end <= len(data):
+                decoded = data[start:end].decode("utf-8", errors="ignore").strip("\x00").strip()
+                if decoded:
+                    return decoded
+
+    # bytes32 symbol fallback
+    decoded = data[:32].decode("utf-8", errors="ignore").strip("\x00").strip()
+    return decoded or "TOKEN"
+
+
+def fetch_evm_token_meta(wallet_address: str, token_address: str) -> tuple[int, str]:
+    decimals = 0
+    symbol = "TOKEN"
+    try:
+        decimals_hex = evm_eth_call(wallet_address, token_address, "0x313ce567")
+        decimals = int(decimals_hex, 16)
+    except Exception:
+        decimals = 0
+    try:
+        symbol_hex = evm_eth_call(wallet_address, token_address, "0x95d89b41")
+        symbol = decode_symbol(symbol_hex)
+    except Exception:
+        symbol = "TOKEN"
+    return decimals, symbol
+
+
+def read_evm_token_balance(wallet_address: str, token_address: str) -> tuple[Decimal, str]:
+    token = normalize_hex_address(token_address)
+    owner = normalize_hex_address(wallet_address)[2:]
+    balance_of_data = "0x70a08231" + ("0" * 24) + owner
+    balance_hex = evm_eth_call(wallet_address, token, balance_of_data)
+    raw_balance = int(balance_hex, 16)
+    if raw_balance == 0:
+        return Decimal(0), "TOKEN"
+    decimals, symbol = fetch_evm_token_meta(wallet_address, token)
+    amount = Decimal(raw_balance) / (Decimal(10) ** decimals if decimals >= 0 else Decimal(1))
+    return amount, symbol
+
+
+def discover_tokens_via_alchemy(wallet_address: str) -> list[tuple[str, Decimal, str]]:
+    response = evm_rpc_request(
+        wallet_address,
+        "alchemy_getTokenBalances",
+        [normalize_hex_address(wallet_address), "erc20"],
+        allow_method_fallback=True,
+    )
+    if "error" in response:
+        return []
+    result = response.get("result", {})
+    token_rows = result.get("tokenBalances", [])
+    discovered: list[tuple[str, Decimal, str]] = []
+    for token_row in token_rows:
+        contract = token_row.get("contractAddress")
+        token_balance_hex = token_row.get("tokenBalance")
+        if not isinstance(contract, str) or not isinstance(token_balance_hex, str):
+            continue
+        raw_balance = int(token_balance_hex, 16)
+        if raw_balance <= 0:
+            continue
+        token = normalize_hex_address(contract)
+        decimals, symbol = fetch_evm_token_meta(wallet_address, token)
+        amount = Decimal(raw_balance) / (Decimal(10) ** decimals if decimals >= 0 else Decimal(1))
+        if amount > 0:
+            discovered.append((token, amount, symbol))
+    return discovered
+
+
 def balance_btc(address: str) -> Decimal:
     payload = request_json(f"https://blockstream.info/api/address/{address}")
     chain = payload.get("chain_stats", {})
@@ -356,44 +522,28 @@ def balance_btc(address: str) -> Decimal:
 
 
 def balance_eth(address: str) -> tuple[Decimal, str, bool]:
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "eth_getBalance",
-        "params": [address, "latest"],
-        "id": 1,
-    }
-    result = request_json(ETH_RPC_URL, payload)
+    result = evm_rpc_request(address, "eth_getBalance", [normalize_hex_address(address), "latest"])
     wei_hex = result.get("result")
     if not isinstance(wei_hex, str):
         raise RuntimeError(f"Unexpected ETH RPC response: {result}")
     wei = int(wei_hex, 16)
     native_eth = Decimal(wei) / Decimal("1000000000000000000")
-
-    # Also check ERC-20 token balances via Ethplorer public endpoint
-    # so non-ETH token holdings are not missed.
-    token_info: dict = {}
-    try:
-        token_info = request_json(
-            f"https://api.ethplorer.io/getAddressInfo/{urllib.parse.quote(address)}?apiKey=freekey"
-        )
-    except urllib.error.HTTPError as exc:
-        if exc.code == 403:
-            print(f"[WARN] Ethplorer returned HTTP 403 for {address}. Continue with native ETH balance only.")
-        else:
-            raise
     token_chunks: list[str] = []
-    for token in token_info.get("tokens", []) or []:
-        token_balance_raw = token.get("balance")
-        token_meta = token.get("tokenInfo", {})
-        if token_balance_raw in (None, ""):
-            continue
-        decimals_raw = token_meta.get("decimals")
-        symbol = token_meta.get("symbol") or token_meta.get("name") or "TOKEN"
+    seen_contracts: set[str] = set()
+
+    for token_contract, token_amount, symbol in discover_tokens_via_alchemy(address):
+        seen_contracts.add(token_contract.lower())
+        token_chunks.append(f"{symbol}:{format_decimal(token_amount, precision=8)}")
+
+    for token_contract in EVM_TOKEN_CONTRACTS:
         try:
-            decimals = int(decimals_raw) if decimals_raw not in (None, "") else 0
-            token_amount = Decimal(str(token_balance_raw)) / (Decimal(10) ** decimals)
-        except Exception:
+            normalized_contract = normalize_hex_address(token_contract)
+        except ValueError as exc:
+            print(f"[WARN] Skip invalid token contract in RECOVERY_EVM_TOKEN_CONTRACTS: {token_contract} ({exc})")
             continue
+        if normalized_contract.lower() in seen_contracts:
+            continue
+        token_amount, symbol = read_evm_token_balance(address, normalized_contract)
         if token_amount > 0:
             token_chunks.append(f"{symbol}:{format_decimal(token_amount, precision=8)}")
 
@@ -405,17 +555,54 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
 
 
 def balance_sol(address: str) -> Decimal:
-    payload = {
+    payload_native = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "getBalance",
         "params": [address],
     }
-    result = request_json("https://api.mainnet-beta.solana.com", payload)
-    lamports = result.get("result", {}).get("value")
+    result_native = request_json(SOL_RPC_URL, payload_native)
+    lamports = result_native.get("result", {}).get("value")
     if lamports is None:
-        raise RuntimeError(f"Unexpected SOL RPC response: {result}")
+        raise RuntimeError(f"Unexpected SOL RPC response: {result_native}")
     return Decimal(lamports) / Decimal("1000000000")
+
+
+def balance_sol_with_tokens(address: str) -> tuple[Decimal, str, bool]:
+    native_sol = balance_sol(address)
+    payload_tokens = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTokenAccountsByOwner",
+        "params": [
+            address,
+            {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
+            {"encoding": "jsonParsed"},
+        ],
+    }
+    result_tokens = request_json(SOL_RPC_URL, payload_tokens)
+    token_chunks: list[str] = []
+    token_rows = result_tokens.get("result", {}).get("value", [])
+    for token_row in token_rows:
+        parsed = token_row.get("account", {}).get("data", {}).get("parsed", {})
+        info = parsed.get("info", {})
+        token_amount_info = info.get("tokenAmount", {})
+        amount_raw = token_amount_info.get("uiAmountString")
+        if not amount_raw:
+            continue
+        try:
+            amount = Decimal(str(amount_raw))
+        except Exception:
+            continue
+        if amount <= 0:
+            continue
+        mint = info.get("mint", "TOKEN")
+        token_chunks.append(f"{mint}:{format_decimal(amount, precision=8)}")
+
+    display = f"SOL:{format_decimal(native_sol, precision=9)}"
+    if token_chunks:
+        display += " | TOKENS:" + ",".join(token_chunks)
+    return native_sol, display, native_sol > 0 or bool(token_chunks)
 
 
 def balance_ton(address: str) -> Decimal:
@@ -434,8 +621,8 @@ def fetch_balance(blockchain: str, address: str) -> BalanceCheckResult:
         amount, display, has_assets = balance_eth(address)
         return BalanceCheckResult(amount=amount, display=display, has_assets=has_assets)
     if blockchain == "sol":
-        amount = balance_sol(address)
-        return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=9), has_assets=amount > 0)
+        amount, display, has_assets = balance_sol_with_tokens(address)
+        return BalanceCheckResult(amount=amount, display=display, has_assets=has_assets)
     if blockchain == "ton":
         amount = balance_ton(address)
         return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=9), has_assets=amount > 0)
@@ -586,7 +773,10 @@ def main() -> int:
         if delay_seconds < 0:
             raise ValueError("--delay-seconds must be >= 0")
 
-        print(f"[INFO] ETH RPC endpoint: {ETH_RPC_URL}")
+        print(f"[INFO] EVM RPC endpoints loaded: {len(EVM_RPC_URLS)}")
+        print(f"[INFO] SOL RPC endpoint: {SOL_RPC_URL}")
+        if EVM_TOKEN_CONTRACTS:
+            print(f"[INFO] Extra EVM token contracts configured: {len(EVM_TOKEN_CONTRACTS)}")
         print(f"[INFO] Checker delay between wallets: {delay_seconds} sec")
         if args.manual_wallets:
             wallets = parse_manual_wallets(args.manual_wallets)
