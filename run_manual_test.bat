@@ -16,12 +16,6 @@ set "PYTHON_BIN=python"
 set "PSQL_BIN=psql"
 set "MANUAL_EVM_TABLE=manual_wallets_evm"
 set "MANUAL_SOL_TABLE=manual_wallets_sol"
-set "RECOVERY_POSTGRES_CONN="
-
-for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
-  if /I "%%~A"=="RECOVERY_POSTGRES_CONN" set "RECOVERY_POSTGRES_CONN=%%~B"
-  if /I "%%~A"=="POSTGRES_CONN" if not defined RECOVERY_POSTGRES_CONN set "RECOVERY_POSTGRES_CONN=%%~B"
-)
 
 if exist "vcpkg.json" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Get-Content -Raw -Path '.\vcpkg.json' | ConvertFrom-Json | Out-Null; exit 0 } catch { exit 1 }"
@@ -117,7 +111,6 @@ if "%RECOVERY_POSTGRES_CONN%"=="" (
   echo.
   echo RECOVERY_POSTGRES_CONN is not set in .env/environment.
   echo Required to pass ETH/SOL wallets into evm-checker and solana-checker.
-  call :set_error 1
   goto :error
 )
 
