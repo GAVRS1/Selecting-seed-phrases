@@ -6,6 +6,19 @@ cd /d "%~dp0"
 
 if not exist ".env" (
   echo Missing .env file. Copy .env.example to .env and set RECOVERY_POSTGRES_CONN.
+  call :set_error 1
+  goto :error
+)
+
+set "RECOVERY_POSTGRES_CONN="
+for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+  if /I "%%~A"=="RECOVERY_POSTGRES_CONN" set "RECOVERY_POSTGRES_CONN=%%~B"
+  if /I "%%~A"=="POSTGRES_CONN" if not defined RECOVERY_POSTGRES_CONN set "RECOVERY_POSTGRES_CONN=%%~B"
+)
+
+if not defined RECOVERY_POSTGRES_CONN (
+  echo Missing RECOVERY_POSTGRES_CONN/POSTGRES_CONN in .env.
+  call :set_error 1
   goto :error
 )
 
@@ -29,7 +42,12 @@ goto :end
 :error
 echo.
 echo Failed with error code %errorlevel%.
+exit /b %errorlevel%
 
 :end
 pause
 endlocal
+exit /b 0
+
+:set_error
+exit /b %~1
