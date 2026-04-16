@@ -2,7 +2,7 @@
 """Check balances for wallets stored in PostgreSQL or manual TXT file.
 
 Workflow:
-1. Read wallet records from PostgreSQL result tables (`btc/evm/sol`) or from manual TXT.
+1. Read wallet records from PostgreSQL result tables (`btc`) or from manual TXT.
 2. Query on-chain balances by blockchain.
 3. Print `blockchain/address/mnemonic/balance` to console for each successfully checked wallet.
 4. If balance/assets > 0, append `blockchain/address/mnemonic_or_test/balance` to recovered_wallets.txt.
@@ -38,21 +38,17 @@ EVM_RPC_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..
 EVM_TOKEN_CONTRACTS_FILE_PATH = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "data", "evm_token_contracts.txt")
 )
-SOL_RPC_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "sol_rpc_urls.txt"))
 MAX_PROXY_ATTEMPTS = 3
 DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
-DEFAULT_SOL_RPC_URL = "https://api.mainnet-beta.solana.com"
 DEFAULT_DELAY_SECONDS = 0.2
-SUPPORTED_RESULT_CHAINS = ("btc", "sol")
+SUPPORTED_RESULT_CHAINS = ("btc",)
 DEFAULT_RESULT_TABLE_BY_CHAIN = {
     "btc": "recovered_wallets_btc",
-    "sol": "recovered_wallets_sol",
 }
 
 NETWORK_OPENER: urllib.request.OpenerDirector | None = None
 PROXY_ROTATOR: "ProxyRotator | None" = None
 ETH_RPC_URL: str = DEFAULT_ETH_RPC_URL
-SOL_RPC_URL: str = DEFAULT_SOL_RPC_URL
 EVM_RPC_URLS: list[str] = [DEFAULT_ETH_RPC_URL]
 EVM_TOKEN_CONTRACTS: list[str] = []
 
@@ -139,12 +135,10 @@ def resolve_result_tables(
     env_file: str,
     *,
     cli_table_btc: str,
-    cli_table_sol: str,
 ) -> dict[str, str]:
     env_values = parse_env_file(env_file)
     table_btc = cli_table_btc or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_BTC") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_BTC") or DEFAULT_RESULT_TABLE_BY_CHAIN["btc"]
-    table_sol = cli_table_sol or env_values.get("RECOVERY_POSTGRES_RESULT_TABLE_SOL") or os.environ.get("RECOVERY_POSTGRES_RESULT_TABLE_SOL") or DEFAULT_RESULT_TABLE_BY_CHAIN["sol"]
-    by_chain = {"btc": table_btc, "sol": table_sol}
+    by_chain = {"btc": table_btc}
     for chain, table in by_chain.items():
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
             raise ValueError(f"Invalid PostgreSQL table name for {chain}: {table}")
@@ -337,17 +331,12 @@ def open_url(req: urllib.request.Request):
 
 
 def configure_network(env_file: str) -> None:
-    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL, SOL_RPC_URL, EVM_RPC_URLS, EVM_TOKEN_CONTRACTS  # noqa: PLW0603
+    global NETWORK_OPENER, PROXY_ROTATOR, ETH_RPC_URL, EVM_RPC_URLS, EVM_TOKEN_CONTRACTS  # noqa: PLW0603
     env_values = parse_env_file(env_file)
     ETH_RPC_URL = (
         os.environ.get("RECOVERY_ETH_RPC_URL")
         or env_values.get("RECOVERY_ETH_RPC_URL")
         or DEFAULT_ETH_RPC_URL
-    )
-    SOL_RPC_URL = (
-        os.environ.get("RECOVERY_SOL_RPC_URL")
-        or env_values.get("RECOVERY_SOL_RPC_URL")
-        or DEFAULT_SOL_RPC_URL
     )
     EVM_RPC_URLS = parse_csv_env(
         os.environ.get("RECOVERY_EVM_RPC_URLS")
@@ -556,57 +545,6 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
     return native_eth, eth_display, native_eth > 0 or has_token_assets
 
 
-def balance_sol(address: str) -> Decimal:
-    payload_native = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getBalance",
-        "params": [address],
-    }
-    result_native = request_json(SOL_RPC_URL, payload_native)
-    lamports = result_native.get("result", {}).get("value")
-    if lamports is None:
-        raise RuntimeError(f"Unexpected SOL RPC response: {result_native}")
-    return Decimal(lamports) / Decimal("1000000000")
-
-
-def balance_sol_with_tokens(address: str) -> tuple[Decimal, str, bool]:
-    native_sol = balance_sol(address)
-    payload_tokens = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getTokenAccountsByOwner",
-        "params": [
-            address,
-            {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
-            {"encoding": "jsonParsed"},
-        ],
-    }
-    result_tokens = request_json(SOL_RPC_URL, payload_tokens)
-    token_chunks: list[str] = []
-    token_rows = result_tokens.get("result", {}).get("value", [])
-    for token_row in token_rows:
-        parsed = token_row.get("account", {}).get("data", {}).get("parsed", {})
-        info = parsed.get("info", {})
-        token_amount_info = info.get("tokenAmount", {})
-        amount_raw = token_amount_info.get("uiAmountString")
-        if not amount_raw:
-            continue
-        try:
-            amount = Decimal(str(amount_raw))
-        except Exception:
-            continue
-        if amount <= 0:
-            continue
-        mint = info.get("mint", "TOKEN")
-        token_chunks.append(f"{mint}:{format_decimal(amount, precision=8)}")
-
-    display = f"SOL:{format_decimal(native_sol, precision=9)}"
-    if token_chunks:
-        display += " | TOKENS:" + ",".join(token_chunks)
-    return native_sol, display, native_sol > 0 or bool(token_chunks)
-
-
 def balance_ton(address: str) -> Decimal:
     payload = request_json(f"https://toncenter.com/api/v2/getAddressBalance?address={address}")
     if not payload.get("ok"):
@@ -619,9 +557,6 @@ def fetch_balance(blockchain: str, address: str) -> BalanceCheckResult:
     if blockchain == "btc":
         amount = balance_btc(address)
         return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=8), has_assets=amount > 0)
-    if blockchain == "sol":
-        amount, display, has_assets = balance_sol_with_tokens(address)
-        return BalanceCheckResult(amount=amount, display=display, has_assets=has_assets)
     if blockchain == "ton":
         amount = balance_ton(address)
         return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=9), has_assets=amount > 0)
@@ -731,12 +666,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--postgres-conn", help="PostgreSQL connection string. Defaults to RECOVERY_POSTGRES_CONN from .env/env")
     parser.add_argument("--postgres-table", default="", help="PostgreSQL table with wallet records (default: recovered_wallets)")
     parser.add_argument("--postgres-table-btc", default="", help="PostgreSQL BTC result table (default: recovered_wallets_btc)")
-    parser.add_argument("--postgres-table-sol", default="", help="PostgreSQL SOL result table (default: recovered_wallets_sol)")
     parser.add_argument(
         "--chain",
         choices=SUPPORTED_RESULT_CHAINS,
         default="",
-        help="Check only one chain console (btc|sol). By default checks BTC and SOL tables sequentially.",
+        help="Check only one chain console (btc). By default checks BTC table.",
     )
     parser.add_argument("--env-file", default=".env", help="Path to env file (default: .env)")
     parser.add_argument("--output", default="recovered_wallets.txt", help="Output file for non-empty wallets")
@@ -772,7 +706,6 @@ def main() -> int:
             raise ValueError("--delay-seconds must be >= 0")
 
         print(f"[INFO] EVM RPC endpoints loaded: {len(EVM_RPC_URLS)}")
-        print(f"[INFO] SOL RPC endpoint: {SOL_RPC_URL}")
         if EVM_TOKEN_CONTRACTS:
             print(f"[INFO] Extra EVM token contracts configured: {len(EVM_TOKEN_CONTRACTS)}")
         print(f"[INFO] Checker delay between wallets: {delay_seconds} sec")
@@ -788,7 +721,6 @@ def main() -> int:
         tables_by_chain = resolve_result_tables(
             args.env_file,
             cli_table_btc=args.postgres_table_btc,
-            cli_table_sol=args.postgres_table_sol,
         )
         if args.chain:
             return process_result_chain(args.chain, conn, tables_by_chain[args.chain], args.output, delay_seconds)
