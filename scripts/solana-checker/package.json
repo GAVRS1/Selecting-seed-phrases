@@ -1,0 +1,22 @@
+{
+  "name": "solana-checker",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx index.ts",
+    "solana": "npx tsx index.ts solana",
+    "all": "npx tsx index.ts all"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.4",
+    "chalk": "^5.4.1",
+    "ora": "^8.2.0",
+    "pg": "^8.16.3",
+    "tsx": "^4.20.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.12",
+    "@types/pg": "^8.15.5"
+  }
+}
