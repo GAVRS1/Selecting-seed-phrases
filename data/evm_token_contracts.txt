@@ -1,0 +1,5 @@
+# Optional ERC-20 contracts for scripts/check_wallet_balances.py
+# One contract address per line (0x...)
+# Add only tokens you really want to force-check via eth_call.
+# Example:
+# 0xdAC17F958D2ee523a2206206994597C13D831ec7

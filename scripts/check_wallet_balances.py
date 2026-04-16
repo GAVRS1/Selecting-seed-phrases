@@ -34,6 +34,11 @@ HTTP_TIMEOUT_SECONDS = 20
 PSQL_BIN = os.environ.get("PSQL_BIN", "psql")
 DEFAULT_PROXY_ENABLED = False
 PROXY_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "proxies.txt"))
+EVM_RPC_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "evm_rpc_urls.txt"))
+EVM_TOKEN_CONTRACTS_FILE_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "data", "evm_token_contracts.txt")
+)
+SOL_RPC_FILE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "sol_rpc_urls.txt"))
 MAX_PROXY_ATTEMPTS = 3
 DEFAULT_ETH_RPC_URL = "https://ethereum-rpc.publicnode.com"
 DEFAULT_SOL_RPC_URL = "https://api.mainnet-beta.solana.com"
