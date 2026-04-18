@@ -6,9 +6,11 @@ import SharedPaths from '../../checker-shared/paths.ts';
 
 export class CsvExporter implements ResultExporter {
   private stream: WriteStream | null = null;
-  private rows: (string | number)[][] = [];
   private readonly CSV_DELIMITER = ";";
   private readonly RESULTS_FOLDER = SharedPaths.ROOT_RESULT_DIR;
+  private totalColumnSums: number[] = [];
+  private totalRowsWritten = 0;
+  private totalStartColumn = 1;
 
   async exportSingleNetwork(
     data: WalletBalance[], 
@@ -20,14 +22,16 @@ export class CsvExporter implements ResultExporter {
 
     const filename = path.join(this.RESULTS_FOLDER, `${config.network}.csv`);
     this.stream = fs.createWriteStream(filename);
+    this.resetTotals();
 
     try {
       // Формируем заголовок CSV
       const hasPrivateKeys = data.some(d => d.wallet.privateKey);
       const walletColumns = hasPrivateKeys ? ["Address", "PrivateKey"] : ["Address"];
       const csvHeader = [...walletColumns, ...tokenHeaders];
-      
+
       this.writeRow(csvHeader);
+      this.prepareTotals(hasPrivateKeys, tokenHeaders.length);
 
       // Записываем данные
       for (const walletData of data) {
@@ -64,6 +68,7 @@ export class CsvExporter implements ResultExporter {
 
     const fullPath = path.join(this.RESULTS_FOLDER, filename);
     this.stream = fs.createWriteStream(fullPath);
+    this.resetTotals();
 
     try {
       // Собираем все уникальные адреса кошельков
@@ -132,6 +137,7 @@ export class CsvExporter implements ResultExporter {
 
       const csvHeader = [...walletColumns, ...sortedAllTokenHeaders];
       this.writeRow(csvHeader);
+      this.prepareTotals(hasPrivateKeys, sortedAllTokenHeaders.length);
 
       // Записываем данные для каждого кошелька
       for (const [address, privateKey] of uniqueWallets.entries()) {
@@ -194,31 +200,25 @@ export class CsvExporter implements ResultExporter {
 
   private writeRow(data: (string | number)[]): void {
     if (!this.stream) return;
-    
-    this.rows.push(data);
+
+    this.updateTotals(data);
     const line = data.join(this.CSV_DELIMITER) + "\n";
     this.stream.write(line);
   }
 
   private addTotalRow(hasPrivateKeys: boolean, tokenCount: number, totalWallets: number): void {
-    if (this.rows.length < 2) return; 
+    if (this.totalRowsWritten === 0) return;
 
-    const dataRows = this.rows.slice(1); // Пропускаем заголовок
-    const startColumn = hasPrivateKeys ? 2 : 1;
-    
     const totals: (string | number)[] = [];
-    
+
     totals.push("Total balance:");
     if (hasPrivateKeys) {
       totals.push("");
     }
-    
-    for (let colIndex = startColumn; colIndex < startColumn + tokenCount; colIndex++) {
-      const sum = dataRows.reduce((acc, row) => {
-        const value = parseFloat(row[colIndex] as string) || 0;
-        return acc + value;
-      }, 0);
-      
+
+    for (let colIndex = 0; colIndex < tokenCount; colIndex++) {
+      const sum = this.totalColumnSums[colIndex] || 0;
+
       // Форматируем число с учетом DEFAULT_DECIMALS, убирая экспоненциальную запись и лишние нули
       totals.push(sum.toFixed(18).replace(/(\.0*|(?<=(\.\d*?[1-9]))0+)$/, ''));
     }
@@ -236,8 +236,39 @@ export class CsvExporter implements ResultExporter {
 
       this.stream.close((err) => {
         if (err) reject(err); 
-        else resolve();
+        else {
+          this.resetTotals();
+          resolve();
+        }
       });
     });
   }
-} 
+
+  private prepareTotals(hasPrivateKeys: boolean, tokenCount: number): void {
+    this.totalStartColumn = hasPrivateKeys ? 2 : 1;
+    this.totalColumnSums = new Array(tokenCount).fill(0);
+    this.totalRowsWritten = 0;
+  }
+
+  private updateTotals(data: (string | number)[]): void {
+    if (this.totalColumnSums.length === 0) return;
+
+    const values = data.slice(this.totalStartColumn, this.totalStartColumn + this.totalColumnSums.length);
+    const containsNumericValue = values.some((value) => Number.isFinite(Number(value)));
+    if (!containsNumericValue) return;
+
+    for (let i = 0; i < this.totalColumnSums.length; i++) {
+      const value = Number(values[i]);
+      if (Number.isFinite(value)) {
+        this.totalColumnSums[i] += value;
+      }
+    }
+    this.totalRowsWritten += 1;
+  }
+
+  private resetTotals(): void {
+    this.totalColumnSums = [];
+    this.totalRowsWritten = 0;
+    this.totalStartColumn = 1;
+  }
+}
