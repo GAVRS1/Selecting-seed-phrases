@@ -2,27 +2,16 @@ import { Network } from '../types';
 import { CONFIG } from '../config';
 import fs from 'fs';
 import path from 'path';
+import SharedPaths from '../../checker-shared/paths.ts';
 
 export interface AppConfig {
-  // Основные настройки
   defaultNetwork?: Network;
   defaultBatchSize: number;
   defaultRetryAttempts: number;
   defaultRetryDelay: number;
-  
-  // Файловые пути
-  walletsFile: string;
-  resultsDir: string;
-  
-  // RPC настройки
   customRpcUrls: Partial<Record<Network, string>>;
-  
-  // Логирование
   enableLogging: boolean;
-  
-  // UI настройки
   enableProgressBar: boolean;
-
   postgresConnectionString?: string;
   postgresSourceTable: string;
   dbFetchLimit: number;
@@ -37,10 +26,24 @@ export interface NetworkConfig {
   tokens: string[];
 }
 
+
+
+interface EvmConfigFile {
+  evm?: {
+    networkOverrides?: Record<
+      string,
+      {
+        rpcUrls?: string[];
+        multicallContract?: string;
+        tokens?: Record<string, string>;
+      }
+    >;
+  };
+}
+
 export class ConfigManager {
   private config: AppConfig;
   private networkConfigs: Map<Network, NetworkConfig>;
-  private envLoaded: boolean = false;
 
   constructor() {
     this.config = this.getDefaultConfig();
@@ -49,150 +52,105 @@ export class ConfigManager {
     this.initializeNetworkConfigs();
   }
 
-  // Получить конфигурацию по умолчанию
   private getDefaultConfig(): AppConfig {
     return {
-
-      postgresConnectionString: process.env.POSTGRES_CONN,
+      postgresConnectionString: process.env.POSTGRES_CONN || process.env.RECOVERY_POSTGRES_CONN,
       postgresSourceTable: 'recovered_wallets_evm',
       dbFetchLimit: 500,
       deleteProcessedWallets: true,
-
       defaultBatchSize: 200,
       defaultRetryAttempts: 3,
       defaultRetryDelay: 1000,
-      
-      walletsFile: 'wallets.txt',
-      resultsDir: 'results',
-      
       customRpcUrls: {},
-      
       enableLogging: true,
-      
-      enableProgressBar: true
+      enableProgressBar: true,
     };
   }
 
-  // Загрузка переменных окружения
   private loadEnvironmentVariables(): void {
-    try {
-      const envPath = path.join(process.cwd(), '.env');
-      if (fs.existsSync(envPath)) {
-        const envContent = fs.readFileSync(envPath, 'utf-8');
-        const envVars = this.parseEnvFile(envContent);
-        this.applyEnvironmentVariables(envVars);
-        this.envLoaded = true;
-      }
-    } catch (error) {
-      console.warn('⚠️  Не удалось загрузить .env файл:', error);
-    }
+    const envVars = SharedPaths.loadEnvFile(SharedPaths.ROOT_ENV_FILE);
+    this.applyEnvironmentVariables(envVars);
   }
 
-  // Парсинг .env файла
-  private parseEnvFile(content: string): Record<string, string> {
-    const envVars: Record<string, string> = {};
-    
-    content.split('\n').forEach(line => {
-      line = line.trim();
-      if (line && !line.startsWith('#')) {
-        const [key, ...valueParts] = line.split('=');
-        if (key && valueParts.length > 0) {
-          const value = valueParts.join('=').trim();
-          envVars[key.trim()] = value.replace(/^["']|["']$/g, ''); // Убираем кавычки
+  private pick(envVars: Record<string, string>, ...keys: string[]): string | undefined {
+    for (const key of keys) {
+      if (envVars[key]) return envVars[key];
+      if (process.env[key]) return process.env[key];
+    }
+    return undefined;
+  }
+
+  private applyEnvironmentVariables(envVars: Record<string, string>): void {
+    this.config.postgresConnectionString =
+      this.pick(envVars, 'POSTGRES_CONN', 'RECOVERY_POSTGRES_CONN') || this.config.postgresConnectionString;
+
+    this.config.postgresSourceTable =
+      this.pick(envVars, 'POSTGRES_SOURCE_TABLE', 'RECOVERY_EVM_POSTGRES_SOURCE_TABLE') || this.config.postgresSourceTable;
+
+    this.config.dbFetchLimit = Number(this.pick(envVars, 'DB_FETCH_LIMIT', 'RECOVERY_DB_FETCH_LIMIT') || this.config.dbFetchLimit);
+
+    this.config.deleteProcessedWallets =
+      (this.pick(envVars, 'DELETE_PROCESSED_WALLETS', 'RECOVERY_DELETE_PROCESSED_WALLETS') || `${this.config.deleteProcessedWallets}`).toLowerCase() === 'true';
+
+    const defaultNetwork = this.pick(envVars, 'DEFAULT_NETWORK');
+    if (defaultNetwork) {
+      this.config.defaultNetwork = defaultNetwork as Network;
+    }
+
+    this.config.defaultBatchSize = Number(this.pick(envVars, 'BATCH_SIZE', 'RECOVERY_BATCH_SIZE') || this.config.defaultBatchSize);
+    this.config.defaultRetryAttempts = Number(this.pick(envVars, 'RETRY_ATTEMPTS', 'RECOVERY_RETRY_ATTEMPTS') || this.config.defaultRetryAttempts);
+    this.config.defaultRetryDelay = Number(this.pick(envVars, 'RETRY_DELAY', 'RECOVERY_RETRY_DELAY') || this.config.defaultRetryDelay);
+
+    this.config.enableLogging = (this.pick(envVars, 'ENABLE_LOGGING', 'RECOVERY_ENABLE_LOGGING') || `${this.config.enableLogging}`).toLowerCase() === 'true';
+    this.config.enableProgressBar = (this.pick(envVars, 'ENABLE_PROGRESS_BAR', 'RECOVERY_ENABLE_PROGRESS_BAR') || `${this.config.enableProgressBar}`).toLowerCase() === 'true';
+
+    Object.keys(envVars).forEach((key) => {
+      if (key.startsWith('RPC_URL_') || key.startsWith('RECOVERY_EVM_RPC_URL_')) {
+        const networkName = key
+          .replace('RPC_URL_', '')
+          .replace('RECOVERY_EVM_RPC_URL_', '')
+          .toLowerCase()
+          .replace(/_/g, '-');
+        const network = Object.values(Network).find((n) => n === networkName);
+        if (network) {
+          this.config.customRpcUrls[network] = envVars[key];
         }
       }
     });
-    
-    return envVars;
   }
 
-  // Применение переменных окружения
-private applyEnvironmentVariables(envVars: Record<string, string>): void {
-  if (envVars.POSTGRES_CONN || process.env.POSTGRES_CONN) {
-    this.config.postgresConnectionString = envVars.POSTGRES_CONN || process.env.POSTGRES_CONN;
-  }
-
-  if (envVars.POSTGRES_SOURCE_TABLE || process.env.POSTGRES_SOURCE_TABLE) {
-    this.config.postgresSourceTable =
-      envVars.POSTGRES_SOURCE_TABLE || process.env.POSTGRES_SOURCE_TABLE || this.config.postgresSourceTable;
-  }
-
-  if (envVars.DB_FETCH_LIMIT || process.env.DB_FETCH_LIMIT) {
-    this.config.dbFetchLimit =
-      parseInt(envVars.DB_FETCH_LIMIT || process.env.DB_FETCH_LIMIT || '') || this.config.dbFetchLimit;
-  }
-
-  if (envVars.DELETE_PROCESSED_WALLETS || process.env.DELETE_PROCESSED_WALLETS) {
-    this.config.deleteProcessedWallets =
-      (envVars.DELETE_PROCESSED_WALLETS || process.env.DELETE_PROCESSED_WALLETS || '').toLowerCase() === 'true';
-  }
-
-  if (envVars.DEFAULT_NETWORK) {
-    this.config.defaultNetwork = envVars.DEFAULT_NETWORK as Network;
-  }
-  if (envVars.BATCH_SIZE) {
-    this.config.defaultBatchSize = parseInt(envVars.BATCH_SIZE) || this.config.defaultBatchSize;
-  }
-  if (envVars.RETRY_ATTEMPTS) {
-    this.config.defaultRetryAttempts = parseInt(envVars.RETRY_ATTEMPTS) || this.config.defaultRetryAttempts;
-  }
-  if (envVars.RETRY_DELAY) {
-    this.config.defaultRetryDelay = parseInt(envVars.RETRY_DELAY) || this.config.defaultRetryDelay;
-  }
-
-  if (envVars.WALLETS_FILE) {
-    this.config.walletsFile = envVars.WALLETS_FILE;
-  }
-  if (envVars.RESULTS_DIR) {
-    this.config.resultsDir = envVars.RESULTS_DIR;
-  }
-
-  if (envVars.ENABLE_LOGGING) {
-    this.config.enableLogging = envVars.ENABLE_LOGGING.toLowerCase() === 'true';
-  }
-
-  if (envVars.ENABLE_PROGRESS_BAR) {
-    this.config.enableProgressBar = envVars.ENABLE_PROGRESS_BAR.toLowerCase() === 'true';
-  }
-
-  Object.keys(envVars).forEach(key => {
-    if (key.startsWith('RPC_URL_')) {
-      const networkName = key.replace('RPC_URL_', '').toLowerCase().replace(/_/g, '-');
-      const network = Object.values(Network).find(n => n === networkName);
-      if (network) {
-        this.config.customRpcUrls[network] = envVars[key];
-      }
+  private loadRootCheckerConfig(): EvmConfigFile {
+    const configPath = path.join(SharedPaths.PROJECT_ROOT, 'config', 'checkers', 'checkers.config.json');
+    if (!fs.existsSync(configPath)) {
+      return {};
     }
-  });
-}
-  // Инициализация конфигураций сетей
+
+    try {
+      return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as EvmConfigFile;
+    } catch {
+      return {};
+    }
+  }
+
   private initializeNetworkConfigs(): void {
+    const rootConfig = this.loadRootCheckerConfig();
+
     Object.entries(CONFIG).forEach(([networkKey, networkData]) => {
       const network = networkKey as Network;
-      
-      const networkConfig: NetworkConfig = {
-        name: this.getNetworkName(network),
-        nativeCurrency: this.getNativeCurrency(network),
-        rpcUrl: this.config.customRpcUrls[network] || networkData.RPC_URL,
-        multicallContract: networkData.MULTICALL3_CONTRACT,
-        tokens: networkData.COLUMNS
-      };
-      
-      this.networkConfigs.set(network, networkConfig);
+      const override = rootConfig.evm?.networkOverrides?.[network];
+      const mergedTokens = override?.tokens ? { ...networkData.TOKENS, ...override.tokens } : networkData.TOKENS;
+      const tokenColumns = ['native', ...Object.values(mergedTokens)];
+
+      this.networkConfigs.set(network, {
+        name: networkData.NAME || network,
+        nativeCurrency: networkData.NATIVE_CURRENCY || 'ETH',
+        rpcUrl: this.config.customRpcUrls[network] || override?.rpcUrls?.[0] || networkData.RPC_URL,
+        multicallContract: override?.multicallContract || networkData.MULTICALL3_CONTRACT,
+        tokens: tokenColumns,
+      });
     });
   }
 
-  // Получить название сети
-  private getNetworkName(network: Network): string {
-    return CONFIG[network]?.NAME || network;
-  }
-
-  // Получить нативную валюту
-  private getNativeCurrency(network: Network): string {
-    return CONFIG[network]?.NATIVE_CURRENCY || "ETH";
-  }
-
-  // Публичные методы для получения конфигурации
   getAppConfig(): AppConfig {
     return { ...this.config };
   }
@@ -204,61 +162,4 @@ private applyEnvironmentVariables(envVars: Record<string, string>): void {
   getAllNetworkConfigs(): Map<Network, NetworkConfig> {
     return new Map(this.networkConfigs);
   }
-
-  // Валидация конфигурации
-  validateConfig(): { isValid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    // Проверка основных настроек
-    if (this.config.defaultBatchSize <= 0) {
-      errors.push('defaultBatchSize должен быть больше 0');
-    }
-    if (this.config.defaultRetryAttempts < 0) {
-      errors.push('defaultRetryAttempts не может быть отрицательным');
-    }
-    if (this.config.defaultRetryDelay < 0) {
-      errors.push('defaultRetryDelay не может быть отрицательным');
-    }
-
-    // Проверка файловых путей
-    if (!this.config.walletsFile) {
-      errors.push('walletsFile не может быть пустым');
-    }
-    if (!this.config.resultsDir) {
-      errors.push('resultsDir не может быть пустым');
-    }
-
-    // Проверка сетевых конфигураций
-    this.networkConfigs.forEach((config, network) => {
-      if (!config.rpcUrl) {
-        errors.push(`RPC URL для сети ${network} не задан`);
-      }
-      if (!config.name) {
-        errors.push(`Название для сети ${network} не задано`);
-      }
-      if (!config.nativeCurrency) {
-        errors.push(`Нативная валюта для сети ${network} не задана`);
-      }
-    });
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
-  }
-
-  // Получить информацию о загруженной конфигурации
-  getConfigInfo(): {
-    envLoaded: boolean;
-    networksCount: number;
-    customRpcCount: number;
-    validationResult: { isValid: boolean; errors: string[] };
-  } {
-    return {
-      envLoaded: this.envLoaded,
-      networksCount: this.networkConfigs.size,
-      customRpcCount: Object.keys(this.config.customRpcUrls).length,
-      validationResult: this.validateConfig()
-    };
-  }
-} 
+}

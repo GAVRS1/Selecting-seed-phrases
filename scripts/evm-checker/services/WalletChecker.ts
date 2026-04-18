@@ -19,10 +19,10 @@ export class WalletChecker {
 
   private logError(message: string): void {
     try {
-      if (!fs.existsSync("results")) {
-        fs.mkdirSync("results", { recursive: true });
+      if (!fs.existsSync("result")) {
+        fs.mkdirSync("result", { recursive: true });
       }
-      const logPath = path.join("results", "error_log.txt");
+      const logPath = path.join("result", "evm_wallet_checker.log");
       const timestamp = new Date().toISOString();
       fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
     } catch (e) {
@@ -86,10 +86,10 @@ export class WalletChecker {
       let header: string;
 
       if (token === "native") {
-        provider = new NativeBalanceProvider(this.config.network);
-        header = CONFIG[this.config.network].NATIVE_CURRENCY || "Native";
+        provider = new NativeBalanceProvider(this.config.network, this.config.rpcUrl, this.config.multicallContract);
+        header = this.config.nativeCurrency || CONFIG[this.config.network].NATIVE_CURRENCY || "Native";
       } else {
-        provider = new ERC20BalanceProvider(this.config.network, token);
+        provider = new ERC20BalanceProvider(this.config.network, token, this.config.rpcUrl, this.config.multicallContract);
         try {
           await provider.initialize();
           const tokenInfo = (provider as ERC20BalanceProvider).getTokenInfo();

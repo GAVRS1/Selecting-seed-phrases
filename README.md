@@ -522,3 +522,20 @@ cmake --build build --config Release
    ```powershell
    $env:VCPKG_ROOT="$env:USERPROFILE\vcpkg"
    ```
+
+## Checker layout (EVM + Solana)
+
+- Use only the **root** `.env` for checker configuration.
+- Shared checker config lives in `config/checkers/checkers.config.json`.
+- Keep runtime inputs (e.g. proxies) in `data/`.
+- Checker outputs are written to `result/`:
+  - `result/recovered_wallets.txt`
+  - `result/evm_checker_errors.log`
+  - `result/solana_checker_errors.log`
+  - CSV tables including `result/all_networks_balances.csv` (EVM all networks).
+
+Install checker dependencies on Windows:
+
+```bat
+install_checkers_npm.bat
+```

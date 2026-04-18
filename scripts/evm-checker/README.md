@@ -18,9 +18,9 @@ npm install pg
 
 ## ⚙️ Configuration
 
-### 🔑 .env Setup (REQUIRED)
+### 🔑 Unified root `.env` (REQUIRED)
 
-Create `.env` file:
+Use the main project `.env` in repository root (not inside checker folders):
 
 ```env
 POSTGRES_CONN=postgresql://user:password@127.0.0.1:5432/recovery
@@ -95,7 +95,7 @@ npm start -- all
 
 Saved to:
 ```
-/results/
+/result/
 ```
 
 Single network:
@@ -222,7 +222,7 @@ npm start -- all
 ## 📊 Результаты
 
 ```
-/results/
+/result/
 ```
 
 ---
@@ -244,3 +244,7 @@ npm start -- all
 - Поддержка ERC20 токенов
 - Подходит для больших объёмов
 - Работает как мультичекер
+
+
+Additional shared config file: `config/checkers/checkers.config.json` (RPC lists, contracts, tokens).
+Proxy/input data files should be kept in `data/`.

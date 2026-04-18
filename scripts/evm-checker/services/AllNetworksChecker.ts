@@ -51,6 +51,9 @@ export class AllNetworksChecker {
           network,
           wallets: this.wallets,
           tokens: networkConfig.tokens,
+          rpcUrl: networkConfig.rpcUrl,
+          multicallContract: networkConfig.multicallContract,
+          nativeCurrency: networkConfig.nativeCurrency,
           options: {
             showProgress: false, // Отключаем внутренний прогресс-бар, т.к. есть внешний
             logErrors: this.configManager.getAppConfig().enableLogging,
