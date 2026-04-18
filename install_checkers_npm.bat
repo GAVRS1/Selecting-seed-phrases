@@ -19,5 +19,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
+
+
+echo Installing npm dependencies for Bitcoin checker...
+cd /d "%ROOT_DIR%scripts\bitcoin-checker"
+call npm install
+if errorlevel 1 (
+  echo Failed to install dependencies for Bitcoin checker.
+  exit /b 1
+)
+
 echo Done.
 exit /b 0

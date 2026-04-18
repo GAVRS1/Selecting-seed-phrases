@@ -20,5 +20,10 @@
       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       "Es9vMFrzaCERmJfrF4H2FYDut4S6j6D8S4x2fQ6NfV8"
     ]
+  },
+  "bitcoin": {
+    "rpcUrls": [
+      "http://127.0.0.1:8332"
+    ]
   }
 }
