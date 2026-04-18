@@ -7,9 +7,9 @@ export class NativeBalanceProvider implements BalanceProvider {
   private multicall: Multicall;
   private multicallAddress: string;
 
-  constructor(network: Network) {
-    const rpcUrl = CONFIG[network].RPC_URL;
-    this.multicallAddress = CONFIG[network].MULTICALL3_CONTRACT ?? MULTICALL3_CONTRACT;
+  constructor(network: Network, rpcUrlOverride?: string, multicallAddressOverride?: string) {
+    const rpcUrl = rpcUrlOverride || CONFIG[network].RPC_URL;
+    this.multicallAddress = multicallAddressOverride || CONFIG[network].MULTICALL3_CONTRACT || MULTICALL3_CONTRACT;
     
     this.multicall = new Multicall({
       nodeUrl: rpcUrl,
@@ -58,13 +58,13 @@ export class ERC20BalanceProvider implements BalanceProvider {
   private tokenInfo: TokenInfo;
   private network: Network;
 
-  constructor(network: Network, tokenAddress: string) {
-    const rpcUrl = CONFIG[network].RPC_URL;
+  constructor(network: Network, tokenAddress: string, rpcUrlOverride?: string, multicallAddressOverride?: string) {
+    const rpcUrl = rpcUrlOverride || CONFIG[network].RPC_URL;
     
     this.multicall = new Multicall({
       nodeUrl: rpcUrl,
       tryAggregate: true,
-      multicallCustomContractAddress: CONFIG[network].MULTICALL3_CONTRACT ?? MULTICALL3_CONTRACT,
+      multicallCustomContractAddress: multicallAddressOverride || CONFIG[network].MULTICALL3_CONTRACT || MULTICALL3_CONTRACT,
     });
 
     this.tokenInfo = {
@@ -141,7 +141,7 @@ export class ERC20BalanceProvider implements BalanceProvider {
       // Если символ всё ещё пустой, попробуем получить его напрямую
       if (!this.tokenInfo.symbol || this.tokenInfo.symbol === '0') {
         try {
-          const rpcUrl = CONFIG[this.network].RPC_URL;
+          const rpcUrl = rpcUrlOverride || CONFIG[this.network].RPC_URL;
           const provider = new ethers.JsonRpcProvider(rpcUrl);
           const contract = new ethers.Contract(this.tokenInfo.address, ERC20_ABI, provider);
           const symbol = await contract.symbol();

@@ -93,6 +93,9 @@ export interface CheckerConfig {
   wallets: WalletData[];
   tokens: string[]; // "native" или адреса токенов
   options?: CheckerOptions;
+  rpcUrl?: string;
+  multicallContract?: string;
+  nativeCurrency?: string;
 }
 
 // Опции для чекера

@@ -8,30 +8,34 @@ import { AllNetworksCheckResult, Network, WalletBalance, WalletData } from './ty
 import { CONFIG } from './config';
 import fs from 'fs';
 import path from 'path';
+import SharedPaths from '../checker-shared/paths.ts';
 
-const RECOVERED_OUTPUT_PATH = path.resolve(process.cwd(), 'recovered_wallets.txt');
+const RECOVERED_OUTPUT_PATH = path.join(SharedPaths.ROOT_RESULT_DIR, 'recovered_wallets.txt');
+const ERRORS_OUTPUT_PATH = path.join(SharedPaths.ROOT_RESULT_DIR, 'evm_checker_errors.log');
 
 function isPositiveBalance(value: string | undefined): boolean {
-  if (!value) {
-    return false;
-  }
+  if (!value) return false;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0;
 }
 
 function formatEthBalance(value: string | undefined): string {
-  if (!value || !Number.isFinite(Number(value))) {
-    return 'ETH:0';
-  }
-
+  if (!value || !Number.isFinite(Number(value))) return 'ETH:0';
   return `ETH:${value}`;
 }
 
-function appendRecoveredWallets(rows: string[]): void {
-  if (rows.length === 0) {
-    return;
-  }
-  fs.appendFileSync(RECOVERED_OUTPUT_PATH, `${rows.join('\n')}\n`, 'utf-8');
+function appendLines(filePath: string, rows: string[]): void {
+  if (!rows.length) return;
+  fs.appendFileSync(filePath, `${rows.join('\n')}\n`, 'utf-8');
+}
+
+function appendErrors(source: string, lines: string[]): void {
+  if (!lines.length) return;
+  const now = new Date().toISOString();
+  appendLines(
+    ERRORS_OUTPUT_PATH,
+    lines.map((line) => `[${now}] [${source}] ${line}`)
+  );
 }
 
 function buildRecoveredLine(wallet: WalletData, displayBalance: string): string {
@@ -48,9 +52,7 @@ function collectRecoveredFromAllNetworks(allResults: AllNetworksCheckResult[], w
   const nativeBalanceByAddress = new Map<string, string>();
   for (const networkResult of allResults) {
     for (const result of networkResult.results) {
-      if (!isPositiveBalance(result.balances.get('native'))) {
-        continue;
-      }
+      if (!isPositiveBalance(result.balances.get('native'))) continue;
       const address = result.wallet.address.toLowerCase();
       if (!nativeBalanceByAddress.has(address)) {
         nativeBalanceByAddress.set(address, result.balances.get('native') || '0');
@@ -60,21 +62,26 @@ function collectRecoveredFromAllNetworks(allResults: AllNetworksCheckResult[], w
 
   return wallets
     .filter((wallet) => nativeBalanceByAddress.has(wallet.address.toLowerCase()))
-    .map((wallet) =>
-      buildRecoveredLine(wallet, formatEthBalance(nativeBalanceByAddress.get(wallet.address.toLowerCase())))
-    );
+    .map((wallet) => buildRecoveredLine(wallet, formatEthBalance(nativeBalanceByAddress.get(wallet.address.toLowerCase()))));
 }
 
 function hasWalletErrors(result: WalletBalance): boolean {
   return Boolean(result.errors && result.errors.size > 0);
 }
 
+function collectErrors(results: WalletBalance[], network: string): string[] {
+  const rows: string[] = [];
+  for (const result of results) {
+    if (!result.errors || result.errors.size === 0) continue;
+    for (const [token, error] of result.errors.entries()) {
+      rows.push(`${network};${result.wallet.address};${token};${error.message}`);
+    }
+  }
+  return rows;
+}
+
 function getDeletableIdsSingleNetwork(wallets: WalletData[], results: WalletBalance[]): number[] {
-  const successAddresses = new Set(
-    results
-      .filter((result) => !hasWalletErrors(result))
-      .map((result) => result.wallet.address.toLowerCase())
-  );
+  const successAddresses = new Set(results.filter((result) => !hasWalletErrors(result)).map((result) => result.wallet.address.toLowerCase()));
 
   return wallets
     .filter((wallet) => successAddresses.has(wallet.address.toLowerCase()))
@@ -104,13 +111,15 @@ function getDeletableIdsAllNetworks(wallets: WalletData[], allResults: AllNetwor
 }
 
 async function main(): Promise<void> {
+  SharedPaths.ensureRootDirectories();
+
   const configManager = new ConfigManager();
   const appConfig = configManager.getAppConfig();
   const ui = new UIService();
   const exporter = new CsvExporter();
 
   if (!appConfig.postgresConnectionString) {
-    throw new Error('POSTGRES_CONN не задан');
+    throw new Error('POSTGRES_CONN/RECOVERY_POSTGRES_CONN не задан');
   }
 
   const repo = new DatabaseWalletRepository({
@@ -131,7 +140,6 @@ async function main(): Promise<void> {
     ui.showInfo(`Загружено из БД: ${wallets.length} кошельков`);
 
     const cliNetwork = process.argv[2] as Network | 'all' | undefined;
-
     let checkedWalletIds: number[] = [];
 
     if (cliNetwork && cliNetwork !== 'all') {
@@ -144,6 +152,9 @@ async function main(): Promise<void> {
         network: cliNetwork,
         wallets,
         tokens: networkConfig.tokens,
+        rpcUrl: networkConfig.rpcUrl,
+        multicallContract: networkConfig.multicallContract,
+        nativeCurrency: networkConfig.nativeCurrency,
         options: {
           showProgress: appConfig.enableProgressBar,
           logErrors: appConfig.enableLogging,
@@ -161,26 +172,25 @@ async function main(): Promise<void> {
         options: checker.getStats() as any,
       } as any, checker.getTokenHeaders());
 
+      appendErrors('single', collectErrors(results, cliNetwork));
+
       const recoveredRows = collectRecoveredFromSingleNetwork(results);
-      appendRecoveredWallets(recoveredRows);
-      if (recoveredRows.length > 0) {
-        ui.showSuccess(`Добавлено в recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
-      } else {
-        ui.showWarning('Кошельки с положительным ETH балансом не найдены.');
-      }
+      appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
+      ui.showSuccess(`Добавлено в result/recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
 
       checkedWalletIds = getDeletableIdsSingleNetwork(wallets, results);
     } else {
       const allChecker = new AllNetworksChecker(wallets, configManager, ui);
       const allResults = await allChecker.checkAllNetworks();
-      await exporter.exportAllNetworks(allResults);
-      const recoveredRows = collectRecoveredFromAllNetworks(allResults, wallets);
-      appendRecoveredWallets(recoveredRows);
-      if (recoveredRows.length > 0) {
-        ui.showSuccess(`Добавлено в recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
-      } else {
-        ui.showWarning('Кошельки с положительным ETH балансом не найдены.');
+      await exporter.exportAllNetworks(allResults, 'all_networks_balances.csv');
+
+      for (const networkResult of allResults) {
+        appendErrors('all', collectErrors(networkResult.results, networkResult.network));
       }
+
+      const recoveredRows = collectRecoveredFromAllNetworks(allResults, wallets);
+      appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
+      ui.showSuccess(`Добавлено в result/recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
 
       checkedWalletIds = getDeletableIdsAllNetworks(wallets, allResults);
     }
@@ -197,6 +207,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
+  SharedPaths.ensureRootDirectories();
+  appendErrors('fatal', [error instanceof Error ? error.message : String(error)]);
   console.error('Критическая ошибка:', error);
   process.exit(1);
 });

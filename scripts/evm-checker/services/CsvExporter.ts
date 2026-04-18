@@ -2,12 +2,13 @@ import fs, { WriteStream } from "fs";
 import path from "path";
 import { ResultExporter, WalletBalance, CheckerConfig, AllNetworksCheckResult, Network } from "../types";
 import { CONFIG } from "../config";
+import SharedPaths from '../../checker-shared/paths.ts';
 
 export class CsvExporter implements ResultExporter {
   private stream: WriteStream | null = null;
   private rows: (string | number)[][] = [];
   private readonly CSV_DELIMITER = ";";
-  private readonly RESULTS_FOLDER = "results";
+  private readonly RESULTS_FOLDER = SharedPaths.ROOT_RESULT_DIR;
 
   async exportSingleNetwork(
     data: WalletBalance[], 
@@ -15,9 +16,7 @@ export class CsvExporter implements ResultExporter {
     tokenHeaders: string[]
   ): Promise<void> {
     // Создаем папку results если её нет
-    if (!fs.existsSync(this.RESULTS_FOLDER)) {
-      fs.mkdirSync(this.RESULTS_FOLDER, { recursive: true });
-    }
+    SharedPaths.ensureRootDirectories();
 
     const filename = path.join(this.RESULTS_FOLDER, `${config.network}.csv`);
     this.stream = fs.createWriteStream(filename);
@@ -61,9 +60,7 @@ export class CsvExporter implements ResultExporter {
     allNetworksResults: AllNetworksCheckResult[],
     filename: string = "all_networks_balances.csv"
   ): Promise<void> {
-    if (!fs.existsSync(this.RESULTS_FOLDER)) {
-      fs.mkdirSync(this.RESULTS_FOLDER, { recursive: true });
-    }
+    SharedPaths.ensureRootDirectories();
 
     const fullPath = path.join(this.RESULTS_FOLDER, filename);
     this.stream = fs.createWriteStream(fullPath);

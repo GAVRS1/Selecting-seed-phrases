@@ -1,13 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { AllNetworksCheckResult, CheckerConfig, ResultExporter, WalletBalance } from '../types';
+import SharedPaths from '../../checker-shared/paths.ts';
 
 export class CsvExporter implements ResultExporter {
   private readonly DELIMITER = ';';
-  private readonly RESULTS_FOLDER = 'results';
+  private readonly RESULTS_FOLDER = SharedPaths.ROOT_RESULT_DIR;
 
   async exportSingleNetwork(data: WalletBalance[], config: CheckerConfig, tokenHeaders: string[]): Promise<void> {
-    fs.mkdirSync(this.RESULTS_FOLDER, { recursive: true });
+    SharedPaths.ensureRootDirectories();
     const fullPath = path.join(this.RESULTS_FOLDER, `${config.network}.csv`);
     const rows: string[] = [];
 
@@ -27,7 +28,7 @@ export class CsvExporter implements ResultExporter {
       return;
     }
 
-    fs.mkdirSync(this.RESULTS_FOLDER, { recursive: true });
+    SharedPaths.ensureRootDirectories();
     const fullPath = path.join(this.RESULTS_FOLDER, filename);
 
     const tokenKeys = Array.from(solana.results[0]?.balances.keys() || ['native']);
