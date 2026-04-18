@@ -50,9 +50,7 @@ add_library(recovery_core
     src/chains/bitcoin_module.cpp
     src/chains/ethereum_module.cpp
     src/chains/solana_module.cpp
-    src/chains/ton_module.cpp
     src/chains/common.cpp
-    src/engine/matcher.cpp
     src/engine/pipeline.cpp
     src/cli/args.cpp
 )
@@ -80,5 +78,3 @@ add_recovery_test(test_pipeline tests/test_pipeline.cpp)
 add_recovery_test(test_derivation tests/test_derivation.cpp)
 add_recovery_test(test_cli_args tests/test_cli_args.cpp)
 add_recovery_test(test_mnemonic_generator tests/test_mnemonic_generator.cpp)
-add_recovery_test(test_matcher_ton tests/test_matcher_ton.cpp)
-add_recovery_test(test_ton_known_vector tests/test_ton_known_vector.cpp)

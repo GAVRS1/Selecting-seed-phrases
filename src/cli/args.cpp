@@ -103,7 +103,6 @@ std::optional<std::string> getenv_copy(const char* name) {
 core::AppConfig parse_args(int argc, char** argv) {
     core::AppConfig cfg;
     bool postgres_conn_set_by_cli = false;
-    bool postgres_table_set_by_cli = false;
     bool seed_table_btc_set_by_cli = false;
     bool seed_table_evm_set_by_cli = false;
     bool seed_table_sol_set_by_cli = false;
@@ -123,18 +122,9 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.paths_eth = split_csv(argv[++i]);
         } else if (arg == "--paths-sol" && i + 1 < argc) {
             cfg.paths_sol = split_csv(argv[++i]);
-        } else if (arg == "--paths-ton" && i + 1 < argc) {
-            cfg.paths_ton = split_csv(argv[++i]);
-        } else if (arg == "--target-addresses" && i + 1 < argc) {
-            cfg.target_addresses_path = argv[++i];
-        } else if (arg == "--recovered-wallets" && i + 1 < argc) {
-            cfg.recovered_wallets_path = argv[++i];
         } else if (arg == "--postgres-conn" && i + 1 < argc) {
             cfg.postgres_conninfo = argv[++i];
             postgres_conn_set_by_cli = true;
-        } else if (arg == "--postgres-table" && i + 1 < argc) {
-            cfg.postgres_table = argv[++i];
-            postgres_table_set_by_cli = true;
         } else if (arg == "--postgres-seed-table-btc" && i + 1 < argc) {
             cfg.postgres_seed_table_btc = argv[++i];
             seed_table_btc_set_by_cli = true;
@@ -155,8 +145,6 @@ core::AppConfig parse_args(int argc, char** argv) {
             result_table_sol_set_by_cli = true;
         } else if (arg == "--env-file" && i + 1 < argc) {
             cfg.env_file_path = argv[++i];
-        } else if (arg == "--manual-wallets" && i + 1 < argc) {
-            cfg.manual_wallets_path = argv[++i];
         } else if (arg == "--bip39-passphrase" && i + 1 < argc) {
             cfg.bip39_passphrase = argv[++i];
         } else if (arg == "--shuffle-words") {
@@ -184,14 +172,6 @@ core::AppConfig parse_args(int argc, char** argv) {
             cfg.postgres_conninfo = dotenv_conn_it->second;
         } else if (const auto env_conn = getenv_copy("RECOVERY_POSTGRES_CONN"); env_conn.has_value()) {
             cfg.postgres_conninfo = *env_conn;
-        }
-    }
-    if (!postgres_table_set_by_cli) {
-        const auto dotenv_table_it = dotenv_values.find("RECOVERY_POSTGRES_TABLE");
-        if (dotenv_table_it != dotenv_values.end() && !dotenv_table_it->second.empty()) {
-            cfg.postgres_table = dotenv_table_it->second;
-        } else if (const auto env_table = getenv_copy("RECOVERY_POSTGRES_TABLE"); env_table.has_value()) {
-            cfg.postgres_table = *env_table;
         }
     }
     if (!seed_table_btc_set_by_cli) {
@@ -237,8 +217,12 @@ core::AppConfig parse_args(int argc, char** argv) {
         }
     }
 
-    if (cfg.template_words.empty() && cfg.manual_wallets_path.empty()) {
-        throw std::invalid_argument("either --template or --manual-wallets is required");
+    if (cfg.template_words.empty()) {
+        throw std::invalid_argument("--template is required");
+    }
+    if (cfg.postgres_conninfo.empty()) {
+        throw std::invalid_argument(
+            "PostgreSQL connection string is required (--postgres-conn or RECOVERY_POSTGRES_CONN in env/.env)");
     }
     return cfg;
 }

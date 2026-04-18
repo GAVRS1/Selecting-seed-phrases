@@ -62,7 +62,6 @@ if not exist ".env" (
 )
 
 set "TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
-set "TON_TEMPLATE=*,*,*,*,*,*,*,*,*,*,*,*"
 set "MAX_CANDIDATES=0"
 set "THREADS=8"
 set "SCAN_LIMIT=20"
@@ -72,27 +71,22 @@ REM Default launch controls (can be overridden in .env)
 set "RECOVERY_ENABLE_BTC=true"
 set "RECOVERY_ENABLE_ETH=true"
 set "RECOVERY_ENABLE_SOL=true"
-set "RECOVERY_ENABLE_TON=true"
 set "RECOVERY_CONSOLES_BTC=1"
 set "RECOVERY_CONSOLES_ETH=1"
 set "RECOVERY_CONSOLES_SOL=1"
-set "RECOVERY_CONSOLES_TON=1"
 set "RECOVERY_RUN_BALANCE_CHECKER=true"
 
 call :load_env_value RECOVERY_ENABLE_BTC
 call :load_env_value RECOVERY_ENABLE_ETH
 call :load_env_value RECOVERY_ENABLE_SOL
-call :load_env_value RECOVERY_ENABLE_TON
 call :load_env_value RECOVERY_CONSOLES_BTC
 call :load_env_value RECOVERY_CONSOLES_ETH
 call :load_env_value RECOVERY_CONSOLES_SOL
-call :load_env_value RECOVERY_CONSOLES_TON
 call :load_env_value RECOVERY_RUN_BALANCE_CHECKER
 
 call :normalize_bool RECOVERY_ENABLE_BTC
 call :normalize_bool RECOVERY_ENABLE_ETH
 call :normalize_bool RECOVERY_ENABLE_SOL
-call :normalize_bool RECOVERY_ENABLE_TON
 call :normalize_bool RECOVERY_RUN_BALANCE_CHECKER
 
 call :normalize_count RECOVERY_CONSOLES_BTC
@@ -100,8 +94,6 @@ if errorlevel 1 goto :error
 call :normalize_count RECOVERY_CONSOLES_ETH
 if errorlevel 1 goto :error
 call :normalize_count RECOVERY_CONSOLES_SOL
-if errorlevel 1 goto :error
-call :normalize_count RECOVERY_CONSOLES_TON
 if errorlevel 1 goto :error
 
 set "RECOVERY_EXE=build\recovery_tool.exe"
@@ -122,7 +114,6 @@ echo Opening recovery consoles using .env settings...
 call :launch_chain btc "m/84'/0'/0'/0/{i}" RECOVERY_ENABLE_BTC RECOVERY_CONSOLES_BTC
 call :launch_chain eth "m/44'/60'/0'/0/{i}" RECOVERY_ENABLE_ETH RECOVERY_CONSOLES_ETH
 call :launch_chain sol "m/44'/501'/{i}'/0'" RECOVERY_ENABLE_SOL RECOVERY_CONSOLES_SOL
-call :launch_chain ton "m/44'/607'/0'/{i}'" RECOVERY_ENABLE_TON RECOVERY_CONSOLES_TON
 
 if "%STARTED_CONSOLES%"=="0" (
   echo No recovery consoles started: all chains are disabled or have zero console count.
@@ -206,13 +197,8 @@ if "%CHAIN_COUNT%"=="0" (
   goto :eof
 )
 
-set "CHAIN_TEMPLATE=%TEMPLATE%"
-if /i "%CHAIN_NAME%"=="ton" (
-  set "CHAIN_TEMPLATE=%TON_TEMPLATE%"
-)
-
 for /l %%i in (1,1,%CHAIN_COUNT%) do (
-  start "%CHAIN_NAME% recovery %%i" cmd /k ""%RECOVERY_EXE%" --template "%CHAIN_TEMPLATE%" --chains "%CHAIN_NAME%" --bip39-passphrase "" --paths-%CHAIN_NAME% "%CHAIN_PATH%" --scan-limit %SCAN_LIMIT% --max-candidates %MAX_CANDIDATES% --threads %THREADS% --env-file ".env""
+  start "%CHAIN_NAME% recovery %%i" cmd /k ""%RECOVERY_EXE%" --template "%TEMPLATE%" --chains "%CHAIN_NAME%" --bip39-passphrase "" --paths-%CHAIN_NAME% "%CHAIN_PATH%" --scan-limit %SCAN_LIMIT% --max-candidates %MAX_CANDIDATES% --threads %THREADS% --env-file ".env""
   set /a STARTED_CONSOLES+=1
 )
 goto :eof

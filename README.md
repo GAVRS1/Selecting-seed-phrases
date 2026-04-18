@@ -14,20 +14,19 @@ This repository now contains a **C++20 project scaffold** for a legal wallet rec
 - `bip39::Wordlist` for wordlist loading and lookup.
 - `bip39::MnemonicValidator` with structure-level checks and a placeholder checksum routine.
 - `bip39::MnemonicGenerator` for wildcard expansion and candidate filtering.
-- `chains::IChainModule` and per-chain modules (`btc`, `eth`, `sol`, `ton`).
+- `chains::IChainModule` and per-chain modules (`btc`, `eth`, `sol`).
 - Real seed derivation via BIP-39 PBKDF2-HMAC-SHA512 and chain-specific key trees (BIP-32 for BTC/ETH, SLIP-0010 Ed25519 for SOL).
 - Ethereum addresses are output in canonical hex format with `0x` prefix.
-- `engine::Pipeline` and `engine::Matcher` for async candidate processing and address matching.
+- `engine::Pipeline` for async candidate processing.
 - Per-chain deduplication: once a chain wallet is recovered, that chain is skipped for all next candidates.
 - Automatic persistence of generated wallets in `blockchain/address/mnemonic` format.
 - Duplicate wallet protection when creating wallet records from seed phrases.
-- Manual wallet import mode from a TXT file (`--manual-wallets`) for parser verification.
 - Console output without balance values: `wallet || address || seed`.
-- Optional persistence of generated wallets to PostgreSQL (`--postgres-conn` + `--postgres-table`).
+- Persistence of generated wallets to PostgreSQL (`--postgres-conn`).
 - Split PostgreSQL schema for BTC/EVM/SOL:
   - `seed_phrases_btc|evm|sol` store unique seed phrases (no повторов).
   - `recovered_wallets_btc|evm|sol` store generated wallet rows for balance checking.
-- `.env` support for PostgreSQL settings (`RECOVERY_POSTGRES_CONN`, `RECOVERY_POSTGRES_TABLE`).
+- `.env` support for PostgreSQL settings (`RECOVERY_POSTGRES_CONN` + table overrides per chain).
 - SQL migrations in `migrations/` with a helper script `scripts/db_migrate.sh`.
 - Basic CLI parser and executable entrypoint.
 - Minimal tests (`test_bip39`, `test_derivation`, `test_pipeline`).
@@ -101,31 +100,24 @@ If you use a multi-config generator (Visual Studio), remember to build with `--c
 ```bash
 ./build/recovery_tool \
   --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability" \
-  --recovered-wallets ./recovered_wallets.txt \
   --postgres-conn "postgresql://postgres:postgres@127.0.0.1:5432/recovery" \
-  --postgres-table "recovered_wallets" \
   --bip39-passphrase "" \
   --shuffle-words \
   --paths-btc "m/84'/0'/0'/0/{i}" \
   --paths-eth "m/44'/60'/0'/0/{i}" \
   --paths-sol "m/44'/501'/{i}'/0'" \
-  --paths-ton "m/44'/607'/0'/{i}'" \
   --scan-limit 20 \
   --max-candidates 0 \
   --threads 8
 ```
 
 > Notes:
-> - `--target-addresses` is now optional.
 > - `--max-candidates 0` means no limit (default behavior).
 > - `--shuffle-words` randomizes wildcard substitution order to avoid always starting from the same alphabetic prefix.
 > - `--shuffle-seed <number>` enables shuffle with a fixed seed for reproducible runs.
 > - `--allow-words "abandon,ability,about"` limits wildcard substitutions without editing the original BIP-39 wordlist.
-> - You can run only manual wallet imports without seed generation by using `--manual-wallets`.
-> - If `--postgres-conn` is set, wallet records are written to PostgreSQL instead of TXT.
-> - If `--postgres-conn` is not passed, the app reads `RECOVERY_POSTGRES_CONN` and `RECOVERY_POSTGRES_TABLE` from `--env-file` (default: `.env`) and then from process environment variables.
+> - `--postgres-conn` can be passed directly or taken from `RECOVERY_POSTGRES_CONN` (`--env-file`, then environment variables).
 > - If the wordlist contains fewer than 2048 words, the tool treats it as a narrowed candidate dictionary and disables checksum validation (a warning is printed at startup).
-> - TON target addresses can be provided both in raw format (`0:...`) and user-friendly base64url format (`EQ...` / `UQ...`); matcher normalizes both forms automatically.
 
 ## PostgreSQL: `.env` + migrations
 
@@ -161,7 +153,8 @@ Optional: custom env file path.
   --template "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability"
 ```
 
-If you need another table name, set `RECOVERY_POSTGRES_TABLE` in `.env` or use `--postgres-table`.
+При необходимости можно переопределить таблицы результатов через:
+`RECOVERY_POSTGRES_RESULT_TABLE_BTC`, `RECOVERY_POSTGRES_RESULT_TABLE_EVM`, `RECOVERY_POSTGRES_RESULT_TABLE_SOL`.
 
 
 ## Скрипт проверки балансов из PostgreSQL
@@ -171,12 +164,10 @@ If you need another table name, set `RECOVERY_POSTGRES_TABLE` in `.env` or use `
 Что делает:
 
 1. Берёт кошельки из таблицы PostgreSQL (`id, blockchain, address, mnemonic`).
-2. Проверяет баланс по сети (`btc`, `eth`, `sol`, `ton`).
-   - `eth`: нативный ETH + ERC-20 через RPC (без Ethplorer).
-   - `sol`: нативный SOL + SPL-токены через RPC.
+2. Проверяет баланс по сети `btc`.
 3. Для каждого успешно проверенного кошелька сначала печатает в консоль строку:
    `blockchain/address/mnemonic/balance`.
-4. Если баланс больше нуля (или для ETH есть ERC-20 токены) — добавляет строку в `recovered_wallets.txt` в формате:
+4. Если баланс больше нуля — добавляет строку в `recovered_wallets.txt` в формате:
    `blockchain/address/mnemonic(или test)/balance`.
 5. После успешной проверки удаляет запись из БД **в любом случае** (и при нулевом, и при ненулевом балансе).
 6. Если баланс не удалось проверить из-за ошибки API/сети, запись не удаляется (чтобы не потерять данные).
@@ -192,12 +183,8 @@ python3 scripts/check_wallet_balances.py \
 Опции:
 
 - `--postgres-conn` — строка подключения PostgreSQL (иначе берётся `RECOVERY_POSTGRES_CONN` из `.env`/env).
-- `--postgres-table` — legacy режим: одна таблица (по умолчанию `recovered_wallets`).
-- Рекомендуемый режим (новый): 3 таблицы результатов
-  - `--postgres-table-btc` (default `recovered_wallets_btc`)
-  - `--postgres-table-evm` (default `recovered_wallets_evm`)
-  - `--postgres-table-sol` (default `recovered_wallets_sol`)
-- `--chain btc|eth|sol` — запуск только для одной сети/«консоли».
+- `--postgres-table-btc` (default `recovered_wallets_btc`)
+- `--chain btc` — запуск только для BTC-консоли.
 - `--delay-seconds` — задержка между проверками кошельков (полезно при rate-limit). Если не задана, берётся `RECOVERY_BALANCE_CHECKER_DELAY_SECONDS` из `.env`/env, иначе используется `0.2`.
 - `--output` — путь к файлу для найденных непустых кошельков.
 
@@ -208,7 +195,6 @@ python3 scripts/check_wallet_balances.py \
   `RECOVERY_EVM_RPC_URLS=https://eth-mainnet.g.alchemy.com/v2/KEY_A,https://mainnet.infura.io/v3/KEY_B`
 - `RECOVERY_ETH_RPC_URL` — fallback RPC, если `RECOVERY_EVM_RPC_URLS` не задан.
 - `RECOVERY_EVM_TOKEN_CONTRACTS` — доп. список ERC-20 контрактов для проверки через `eth_call` (если ваш RPC не поддерживает `alchemy_getTokenBalances`).
-- `RECOVERY_SOL_RPC_URL` — RPC endpoint для Solana (по умолчанию `https://api.mainnet-beta.solana.com`).
 
 Как работает распределение запросов по EVM RPC:
 
@@ -225,45 +211,6 @@ python3 scripts/check_wallet_balances.py \
 - При неудачном запросе checker автоматически переключается на следующий прокси из списка.
 
 Если прокси включён, но файл `data/proxies.txt` отсутствует, пустой или содержит неверный формат, скрипт завершится с ошибкой.
-
-## Экспорт legacy таблицы `recovered_wallets` в Excel + очистка
-
-Добавлен скрипт `scripts/migrate_legacy_wallets_to_split.py` для старой схемы, где есть только одна таблица `recovered_wallets`.
-
-Что делает за один запуск:
-
-1. Читает **все** строки из `recovered_wallets` батчами (по `id`, через `--batch-size`).
-2. Создаёт один Excel-файл (`.xlsx`) с листами: `all`, `btc`, `evm`, `sol`, `unknown`.
-3. Если экспорт успешен, удаляет из `recovered_wallets` только те `id`, которые попали в Excel.
-4. Если экспорт неуспешен, удаление не выполняется (fail-safe).
-
-Запуск:
-
-```bash
-python3 scripts/migrate_legacy_wallets_to_split.py \
-  --env-file .env \
-  --legacy-table recovered_wallets \
-  --batch-size 1000 \
-  --excel-output ./legacy_export_batch_001.xlsx
-```
-
-Полезные флаги:
-
-- `--dry-run` — только сделать Excel и показать статистику, без удаления в БД.
-- `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
-
-Windows быстрый запуск:
-
-```bat
-run_legacy_export.bat [batch_size] [excel_output] [dry-run]
-```
-
-Примеры:
-
-```bat
-run_legacy_export.bat 50 legacy_export_001.xlsx
-run_legacy_export.bat 100 legacy_export_preview.xlsx dry-run
-```
 
 ## Экспорт split таблиц `recovered_wallets_btc|evm|sol` в Excel + очистка
 
@@ -298,40 +245,12 @@ python3 scripts/export_split_recovered_wallets.py \
 - `--dry-run` — только сделать Excel и показать статистику, без удаления в БД.
 - `--postgres-conn` — явная строка PostgreSQL (если не хотите брать из `.env`).
 
-## Manual wallet check mode
-
-Use this mode when you want to verify parser behavior on known addresses from a text file.
-
-### Input format (`manual_wallets.txt`)
-
-One wallet per line:
-
-```text
-btc,1BoatSLRHtKNngkdXEeobR76b53LETtpyT
-eth,0xde0B295669a9FD93d5F28D9Ec85E40f4cb697BAe
-sol,Vote111111111111111111111111111111111111111
-ton,0:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-```
-
-Also supported separators: `;` or a single space.
-Lines starting with `#` are ignored.
-
-### Run example
-
-```bash
-./build/recovery_tool \
-  --manual-wallets ./manual_wallets.txt \
-  --recovered-wallets ./recovered_wallets.txt \
-  --chains "btc,eth,sol,ton"
-```
-
 ## Быстрый запуск в Windows (.bat)
 
 1. Установите **CMake** и **компилятор C++** (например, Visual Studio Build Tools с MSVC).
 2. В корне репозитория запустите `run_project.bat` двойным кликом.
-3. При необходимости отредактируйте переменные `TEMPLATE`, `TON_TEMPLATE` и `MAX_CANDIDATES` внутри `run_project.bat` под вашу seed-фразу и режим перебора (через запятую, `*` для неизвестных слов).
+3. При необходимости отредактируйте переменные `TEMPLATE` и `MAX_CANDIDATES` внутри `run_project.bat` под вашу seed-фразу и режим перебора (через запятую, `*` для неизвестных слов).
    - По умолчанию `TEMPLATE` = `*,*,*,*,*,*,*,*,*,*,*,*`, то есть все 12 слов берутся из текущего wordlist.
-   - По умолчанию `TON_TEMPLATE` = 12 слов (`*`), и для TON в `run_project.bat` используется 12-словный шаблон.
    - Если вы меняете только слова в текстовом файле `data/bip39_english.txt`, оставьте `TEMPLATE` со звёздочками, иначе фиксированные слова в `TEMPLATE` не будут заменяться.
    - `MAX_CANDIDATES=0` — без лимита, поиск идёт пока вы сами не остановите процесс.
 
@@ -351,12 +270,10 @@ Lines starting with `#` are ignored.
 RECOVERY_ENABLE_BTC=true
 RECOVERY_ENABLE_ETH=true
 RECOVERY_ENABLE_SOL=false
-RECOVERY_ENABLE_TON=false
 
 RECOVERY_CONSOLES_BTC=25
 RECOVERY_CONSOLES_ETH=100
 RECOVERY_CONSOLES_SOL=0
-RECOVERY_CONSOLES_TON=0
 
 # Запускать ли checker вместе с run_project.bat.
 RECOVERY_RUN_BALANCE_CHECKER=true
@@ -375,8 +292,6 @@ RECOVERY_BALANCE_CHECKER_DELAY_SECONDS=0.2
 - `RECOVERY_RUN_BALANCE_CHECKER=true` — вместе с recovery-консолями запускается и Python checker.
 - `RECOVERY_RUN_BALANCE_CHECKER=false` — `run_project.bat` запускает только recovery-консоли.
 - Для запуска checker вручную в любое время используйте `run_checker.bat`.
-
-Для ручной проверки адресов из файла используйте `run_manual_test.bat`.
 
 ## Подробная установка на Windows (Visual Studio уже установлена)
 

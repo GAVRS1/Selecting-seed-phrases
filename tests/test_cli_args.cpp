@@ -17,6 +17,8 @@ int main() {
             "abandon ability * * abandon ability abandon ability abandon ability abandon ability",
             "--allow-words",
             "bird body bridge",
+            "--postgres-conn",
+            "postgresql://postgres:postgres@localhost:5432/recovery",
         };
         std::vector<char*> argv;
         argv.reserve(storage.size());
@@ -40,32 +42,11 @@ int main() {
         std::vector<std::string> storage{
             "recovery_tool",
             "--template",
-            "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
-            "--allow-words",
-            "bird,body,bridge",
-            "--paths-ton",
-            "m/44'/607'/0'/{i}'",
-        };
-        std::vector<char*> argv;
-        argv.reserve(storage.size());
-        for (auto& item : storage) {
-            argv.push_back(item.data());
-        }
-
-        const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
-        assert(cfg.template_words.size() == 24);
-        assert(cfg.allow_words.size() == 3);
-        assert(cfg.paths_ton.size() == 1);
-        assert(cfg.paths_ton[0] == "m/44'/607'/0'/{i}'");
-    }
-
-    {
-        std::vector<std::string> storage{
-            "recovery_tool",
-            "--template",
             "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
             "--chains",
-            "ton",
+            "btc,eth,sol",
+            "--postgres-conn",
+            "postgresql://postgres:postgres@localhost:5432/recovery",
         };
         std::vector<char*> argv;
         argv.reserve(storage.size());
@@ -75,8 +56,8 @@ int main() {
 
         const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
         assert(cfg.template_words.size() == 12);
-        assert(cfg.chains.size() == 1);
-        assert(cfg.chains[0] == "ton");
+        assert(cfg.chains.size() == 3);
+        assert(cfg.chains[0] == "btc");
     }
 
     {
@@ -86,8 +67,8 @@ int main() {
             "abandon,ability,*,*,abandon,ability,abandon,ability,abandon,ability,abandon,ability",
             "--postgres-conn",
             "postgresql://postgres:postgres@localhost:5432/recovery",
-            "--postgres-table",
-            "wallet_hits",
+            "--postgres-result-table-btc",
+            "wallet_hits_btc",
         };
         std::vector<char*> argv;
         argv.reserve(storage.size());
@@ -97,7 +78,7 @@ int main() {
 
         const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
         assert(cfg.postgres_conninfo == "postgresql://postgres:postgres@localhost:5432/recovery");
-        assert(cfg.postgres_table == "wallet_hits");
+        assert(cfg.postgres_result_table_btc == "wallet_hits_btc");
     }
 
     {
@@ -105,7 +86,7 @@ int main() {
         {
             std::ofstream out(env_file);
             out << "RECOVERY_POSTGRES_CONN=postgresql://env:env@localhost:5432/envdb\n";
-            out << "RECOVERY_POSTGRES_TABLE=env_wallet_hits\n";
+            out << "RECOVERY_POSTGRES_RESULT_TABLE_BTC=env_wallet_hits_btc\n";
         }
 
         std::vector<std::string> storage{
@@ -123,7 +104,7 @@ int main() {
 
         const auto cfg = cli::parse_args(static_cast<int>(argv.size()), argv.data());
         assert(cfg.postgres_conninfo == "postgresql://env:env@localhost:5432/envdb");
-        assert(cfg.postgres_table == "env_wallet_hits");
+        assert(cfg.postgres_result_table_btc == "env_wallet_hits_btc");
         std::remove(env_file.c_str());
     }
 

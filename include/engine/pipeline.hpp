@@ -3,18 +3,14 @@
 #include "bip39/mnemonic_generator.hpp"
 #include "bip39/mnemonic_validator.hpp"
 #include "chains/i_chain_module.hpp"
-#include "core/secure_buffer.hpp"
 #include "core/types.hpp"
-#include "engine/matcher.hpp"
 
 #include <memory>
 #include <atomic>
 #include <cstdint>
-#include <optional>
 #include <mutex>
 #include <string>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 namespace engine {
@@ -23,8 +19,7 @@ class Pipeline {
 public:
     Pipeline(const core::AppConfig& config,
              const bip39::MnemonicValidator& validator,
-             const bip39::MnemonicGenerator& generator,
-             Matcher& matcher);
+             const bip39::MnemonicGenerator& generator);
 
     void register_chain(std::unique_ptr<chains::IChainModule> module);
     void run();
@@ -33,7 +28,6 @@ private:
     core::AppConfig config_;
     const bip39::MnemonicValidator& validator_;
     const bip39::MnemonicGenerator& generator_;
-    Matcher& matcher_;
     std::vector<std::unique_ptr<chains::IChainModule>> modules_;
     std::unordered_set<std::string> recovered_chains_;
     std::mutex recovered_mutex_;
@@ -50,13 +44,8 @@ private:
     void print_console_row(const std::string& chain_name,
                            const std::string& address,
                            const std::string& mnemonic_words);
-    bool wallet_record_exists(const std::string& chain_name,
-                              const std::string& address,
-                              const std::string& mnemonic_words) const;
     bool mark_seed_phrase_if_new(const std::string& chain_name,
                                  const std::string& mnemonic_words) const;
-    void run_manual_wallet_checks();
-    std::optional<std::pair<std::string, std::string>> parse_manual_wallet_line(const std::string& line) const;
     void persist_wallet_record(const std::string& chain_name,
                                const std::string& address,
                                const core::Mnemonic& mnemonic) const;

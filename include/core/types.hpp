@@ -20,11 +20,7 @@ struct AppConfig {
     std::vector<std::string> paths_btc;
     std::vector<std::string> paths_eth;
     std::vector<std::string> paths_sol;
-    std::vector<std::string> paths_ton;
-    std::string target_addresses_path;
-    std::string recovered_wallets_path{"recovered_wallets.txt"};
     std::string postgres_conninfo;
-    std::string postgres_table{"recovered_wallets"};
     std::string postgres_seed_table_btc{"seed_phrases_btc"};
     std::string postgres_seed_table_evm{"seed_phrases_evm"};
     std::string postgres_seed_table_sol{"seed_phrases_sol"};
@@ -32,7 +28,6 @@ struct AppConfig {
     std::string postgres_result_table_evm{"recovered_wallets_evm"};
     std::string postgres_result_table_sol{"recovered_wallets_sol"};
     std::string env_file_path{".env"};
-    std::string manual_wallets_path;
     std::string bip39_passphrase;
     bool shuffle_words{false};
     uint64_t shuffle_seed{0};
