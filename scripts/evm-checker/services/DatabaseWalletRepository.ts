@@ -20,15 +20,30 @@ export class DatabaseWalletRepository {
     this.pool = new Pool({ connectionString: config.connectionString });
   }
 
-  async fetchBatch(): Promise<DbWalletRow[]> {
+  async fetchBatch(lastProcessedId?: number): Promise<DbWalletRow[]> {
+    const hasPositiveLimit = Number.isFinite(this.config.fetchLimit) && this.config.fetchLimit > 0;
+    const hasCursor = typeof lastProcessedId === 'number';
+    const useLimit = hasPositiveLimit;
+
+    const whereClause = hasCursor ? 'WHERE id > $1' : '';
+    const limitClause = useLimit ? `LIMIT $${hasCursor ? 2 : 1}` : '';
     const sql = `
       SELECT id, address, mnemonic
       FROM ${this.table}
+      ${whereClause}
       ORDER BY id
-      LIMIT $1
+      ${limitClause}
     `;
 
-    const result = await this.pool.query(sql, [this.config.fetchLimit]);
+    const queryParams: Array<number> = [];
+    if (hasCursor) {
+      queryParams.push(lastProcessedId);
+    }
+    if (useLimit) {
+      queryParams.push(this.config.fetchLimit);
+    }
+
+    const result = await this.pool.query(sql, queryParams);
 
     return result.rows.map((row) => ({
       id: Number(row.id),
