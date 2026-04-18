@@ -236,7 +236,7 @@ async function main(): Promise<void> {
       const deleted = await repo.deleteBatch(Array.from(idsToDelete));
       ui.showSuccess(`Удалено из БД: ${deleted} кошельков.`);
     } else {
-      ui.showWarning('Удаление отключено, нет id для удаления или кошельки содержат ошибки проверки.');
+      ui.showWarning('Удаление включено, но из БД ничего не удалено.');
     }
   } finally {
     await repo.close();
