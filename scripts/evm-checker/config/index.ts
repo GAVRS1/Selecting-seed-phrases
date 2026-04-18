@@ -1,11 +1,5 @@
 import { Config, Network } from "../types";
-import * as networksModule from '../../../config/checkers/evm-networks';
-
-const NETWORKS_CONFIG =
-  (networksModule as any).NETWORKS_CONFIG ??
-  (networksModule as any).default?.NETWORKS_CONFIG ??
-  (networksModule as any).default;
-
+import { NETWORKS_CONFIG } from '../../../config/checkers/evm-networks';
 
 // Преобразуем конфигурацию в формат, ожидаемый приложением
 export const CONFIG: Config = Object.entries(NETWORKS_CONFIG).reduce((acc, [network, config]) => {
