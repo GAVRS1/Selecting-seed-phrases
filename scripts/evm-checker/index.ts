@@ -26,7 +26,9 @@ function formatEthBalance(value: string | undefined): string {
 
 function appendLines(filePath: string, rows: string[]): void {
   if (!rows.length) return;
-  fs.appendFileSync(filePath, `${rows.join('\n')}\n`, 'utf-8');
+  for (const row of rows) {
+    fs.appendFileSync(filePath, `${row}\n`, 'utf-8');
+  }
 }
 
 function appendErrors(source: string, lines: string[]): void {
