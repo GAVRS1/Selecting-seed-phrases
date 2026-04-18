@@ -58,7 +58,7 @@ created_at  TIMESTAMP
 1. Fetch wallets from DB пачками (LIMIT N за один запрос)
 2. Check balances across networks
 3. Save results to CSV
-4. Delete processed wallets from DB после каждой пачки
+4. Delete processed wallets from DB (batch)
 5. Повторять цикл, пока таблица не закончится (проверяется вся таблица, а не только первая пачка)
 
 ✔ Zero balance → deleted  

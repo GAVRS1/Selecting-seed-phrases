@@ -138,8 +138,7 @@ async function main(): Promise<void> {
     const allWalletsForSingleNetwork: WalletData[] = [];
     let singleNetworkTokenHeaders: string[] = [];
     const allNetworksResultsByNetwork = new Map<Network, AllNetworksCheckResult>();
-    let deletedWalletsTotal = 0;
-    let deletableWalletsFound = false;
+    const idsToDelete = new Set<number>();
 
     while (true) {
       const wallets = await repo.fetchBatch(lastProcessedId);
@@ -184,15 +183,7 @@ async function main(): Promise<void> {
         appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
         ui.showSuccess(`Пачка #${batchNumber}: добавлено в result/recovered_wallets.txt ${recoveredRows.length} кошельков.`);
 
-        const deletableIds = getDeletableIdsSingleNetwork(wallets, results);
-        if (deletableIds.length > 0) {
-          deletableWalletsFound = true;
-        }
-        if (appConfig.deleteProcessedWallets && deletableIds.length > 0) {
-          const deleted = await repo.deleteBatch(deletableIds);
-          deletedWalletsTotal += deleted;
-          ui.showSuccess(`Пачка #${batchNumber}: удалено из БД ${deleted} кошельков.`);
-        }
+        getDeletableIdsSingleNetwork(wallets, results).forEach((id) => idsToDelete.add(id));
         allSingleNetworkResults.push(...results);
         allWalletsForSingleNetwork.push(...wallets);
       } else {
@@ -217,15 +208,7 @@ async function main(): Promise<void> {
         appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
         ui.showSuccess(`Пачка #${batchNumber}: добавлено в result/recovered_wallets.txt ${recoveredRows.length} кошельков.`);
 
-        const deletableIds = getDeletableIdsAllNetworks(wallets, allResults);
-        if (deletableIds.length > 0) {
-          deletableWalletsFound = true;
-        }
-        if (appConfig.deleteProcessedWallets && deletableIds.length > 0) {
-          const deleted = await repo.deleteBatch(deletableIds);
-          deletedWalletsTotal += deleted;
-          ui.showSuccess(`Пачка #${batchNumber}: удалено из БД ${deleted} кошельков.`);
-        }
+        getDeletableIdsAllNetworks(wallets, allResults).forEach((id) => idsToDelete.add(id));
       }
     }
 
@@ -249,12 +232,9 @@ async function main(): Promise<void> {
       await exporter.exportAllNetworks(Array.from(allNetworksResultsByNetwork.values()), 'all_networks_balances.csv');
     }
 
-    if (appConfig.deleteProcessedWallets && deletedWalletsTotal > 0) {
-      ui.showSuccess(`Удалено из БД всего: ${deletedWalletsTotal} кошельков.`);
-    } else if (!appConfig.deleteProcessedWallets) {
-      ui.showWarning('Удаление отключено настройкой deleteProcessedWallets.');
-    } else if (!deletableWalletsFound) {
-      ui.showWarning('Нет id для удаления или кошельки содержат ошибки проверки.');
+    if (appConfig.deleteProcessedWallets && idsToDelete.size > 0) {
+      const deleted = await repo.deleteBatch(Array.from(idsToDelete));
+      ui.showSuccess(`Удалено из БД: ${deleted} кошельков.`);
     } else {
       ui.showWarning('Удаление включено, но из БД ничего не удалено.');
     }
