@@ -130,76 +130,133 @@ async function main(): Promise<void> {
 
   try {
     ui.showHeader();
+    const cliNetwork = process.argv[2] as Network | 'all' | undefined;
+    let lastProcessedId: number | undefined;
+    let processedWalletsTotal = 0;
+    let batchNumber = 0;
+    const allSingleNetworkResults: WalletBalance[] = [];
+    const allWalletsForSingleNetwork: WalletData[] = [];
+    let singleNetworkTokenHeaders: string[] = [];
+    const allNetworksResultsByNetwork = new Map<Network, AllNetworksCheckResult>();
+    let deletedWalletsTotal = 0;
+    let deletableWalletsFound = false;
 
-    const wallets = await repo.fetchBatch();
-    if (wallets.length === 0) {
+    while (true) {
+      const wallets = await repo.fetchBatch(lastProcessedId);
+      if (wallets.length === 0) {
+        break;
+      }
+
+      batchNumber += 1;
+      processedWalletsTotal += wallets.length;
+      lastProcessedId = wallets[wallets.length - 1]?.id;
+      ui.showInfo(`Пачка #${batchNumber}: загружено ${wallets.length} кошельков (всего обработано: ${processedWalletsTotal}).`);
+
+      if (cliNetwork && cliNetwork !== 'all') {
+        const networkConfig = configManager.getNetworkConfig(cliNetwork);
+        if (!networkConfig) {
+          throw new Error(`Неизвестная сеть: ${cliNetwork}`);
+        }
+
+        const checker = new WalletChecker({
+          network: cliNetwork,
+          wallets,
+          tokens: networkConfig.tokens,
+          rpcUrl: networkConfig.rpcUrl,
+          multicallContract: networkConfig.multicallContract,
+          nativeCurrency: networkConfig.nativeCurrency,
+          options: {
+            showProgress: appConfig.enableProgressBar,
+            logErrors: appConfig.enableLogging,
+            batchSize: appConfig.defaultBatchSize,
+            retryAttempts: appConfig.defaultRetryAttempts,
+            retryDelay: appConfig.defaultRetryDelay,
+          },
+        });
+
+        const results = await checker.check();
+        if (singleNetworkTokenHeaders.length === 0) {
+          singleNetworkTokenHeaders = checker.getTokenHeaders();
+        }
+        appendErrors('single', collectErrors(results, cliNetwork));
+
+        const recoveredRows = collectRecoveredFromSingleNetwork(results);
+        appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
+        ui.showSuccess(`Пачка #${batchNumber}: добавлено в result/recovered_wallets.txt ${recoveredRows.length} кошельков.`);
+
+        const deletableIds = getDeletableIdsSingleNetwork(wallets, results);
+        if (deletableIds.length > 0) {
+          deletableWalletsFound = true;
+        }
+        if (appConfig.deleteProcessedWallets && deletableIds.length > 0) {
+          const deleted = await repo.deleteBatch(deletableIds);
+          deletedWalletsTotal += deleted;
+          ui.showSuccess(`Пачка #${batchNumber}: удалено из БД ${deleted} кошельков.`);
+        }
+        allSingleNetworkResults.push(...results);
+        allWalletsForSingleNetwork.push(...wallets);
+      } else {
+        const allChecker = new AllNetworksChecker(wallets, configManager, ui);
+        const allResults = await allChecker.checkAllNetworks();
+
+        for (const networkResult of allResults) {
+          appendErrors('all', collectErrors(networkResult.results, networkResult.network));
+          const existing = allNetworksResultsByNetwork.get(networkResult.network);
+          if (existing) {
+            existing.results.push(...networkResult.results);
+          } else {
+            allNetworksResultsByNetwork.set(networkResult.network, {
+              network: networkResult.network,
+              tokenHeaders: networkResult.tokenHeaders,
+              results: [...networkResult.results],
+            });
+          }
+        }
+
+        const recoveredRows = collectRecoveredFromAllNetworks(allResults, wallets);
+        appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
+        ui.showSuccess(`Пачка #${batchNumber}: добавлено в result/recovered_wallets.txt ${recoveredRows.length} кошельков.`);
+
+        const deletableIds = getDeletableIdsAllNetworks(wallets, allResults);
+        if (deletableIds.length > 0) {
+          deletableWalletsFound = true;
+        }
+        if (appConfig.deleteProcessedWallets && deletableIds.length > 0) {
+          const deleted = await repo.deleteBatch(deletableIds);
+          deletedWalletsTotal += deleted;
+          ui.showSuccess(`Пачка #${batchNumber}: удалено из БД ${deleted} кошельков.`);
+        }
+      }
+    }
+
+    if (processedWalletsTotal === 0) {
       ui.showWarning('В таблице нет кошельков для проверки.');
       return;
     }
-
-    ui.showInfo(`Загружено из БД: ${wallets.length} кошельков`);
-
-    const cliNetwork = process.argv[2] as Network | 'all' | undefined;
-    let checkedWalletIds: number[] = [];
 
     if (cliNetwork && cliNetwork !== 'all') {
       const networkConfig = configManager.getNetworkConfig(cliNetwork);
       if (!networkConfig) {
         throw new Error(`Неизвестная сеть: ${cliNetwork}`);
       }
-
-      const checker = new WalletChecker({
+      await exporter.exportSingleNetwork(allSingleNetworkResults, {
         network: cliNetwork,
-        wallets,
+        wallets: allWalletsForSingleNetwork,
         tokens: networkConfig.tokens,
-        rpcUrl: networkConfig.rpcUrl,
-        multicallContract: networkConfig.multicallContract,
-        nativeCurrency: networkConfig.nativeCurrency,
-        options: {
-          showProgress: appConfig.enableProgressBar,
-          logErrors: appConfig.enableLogging,
-          batchSize: appConfig.defaultBatchSize,
-          retryAttempts: appConfig.defaultRetryAttempts,
-          retryDelay: appConfig.defaultRetryDelay,
-        },
-      });
-
-      const results = await checker.check();
-      await exporter.exportSingleNetwork(results, {
-        network: cliNetwork,
-        wallets,
-        tokens: networkConfig.tokens,
-        options: checker.getStats() as any,
-      } as any, checker.getTokenHeaders());
-
-      appendErrors('single', collectErrors(results, cliNetwork));
-
-      const recoveredRows = collectRecoveredFromSingleNetwork(results);
-      appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
-      ui.showSuccess(`Добавлено в result/recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
-
-      checkedWalletIds = getDeletableIdsSingleNetwork(wallets, results);
+        options: {},
+      } as any, singleNetworkTokenHeaders);
     } else {
-      const allChecker = new AllNetworksChecker(wallets, configManager, ui);
-      const allResults = await allChecker.checkAllNetworks();
-      await exporter.exportAllNetworks(allResults, 'all_networks_balances.csv');
-
-      for (const networkResult of allResults) {
-        appendErrors('all', collectErrors(networkResult.results, networkResult.network));
-      }
-
-      const recoveredRows = collectRecoveredFromAllNetworks(allResults, wallets);
-      appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
-      ui.showSuccess(`Добавлено в result/recovered_wallets.txt: ${recoveredRows.length} кошельков.`);
-
-      checkedWalletIds = getDeletableIdsAllNetworks(wallets, allResults);
+      await exporter.exportAllNetworks(Array.from(allNetworksResultsByNetwork.values()), 'all_networks_balances.csv');
     }
 
-    if (appConfig.deleteProcessedWallets && checkedWalletIds.length > 0) {
-      const deleted = await repo.deleteBatch(checkedWalletIds);
-      ui.showSuccess(`Удалено из БД: ${deleted} кошельков одной пачкой.`);
+    if (appConfig.deleteProcessedWallets && deletedWalletsTotal > 0) {
+      ui.showSuccess(`Удалено из БД всего: ${deletedWalletsTotal} кошельков.`);
+    } else if (!appConfig.deleteProcessedWallets) {
+      ui.showWarning('Удаление отключено настройкой deleteProcessedWallets.');
+    } else if (!deletableWalletsFound) {
+      ui.showWarning('Нет id для удаления или кошельки содержат ошибки проверки.');
     } else {
-      ui.showWarning('Удаление отключено, нет id для удаления или кошельки содержат ошибки проверки.');
+      ui.showWarning('Удаление включено, но из БД ничего не удалено.');
     }
   } finally {
     await repo.close();
