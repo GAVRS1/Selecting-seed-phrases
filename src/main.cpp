@@ -4,19 +4,15 @@
 #include "chains/bitcoin_module.hpp"
 #include "chains/ethereum_module.hpp"
 #include "chains/solana_module.hpp"
-#include "chains/ton_module.hpp"
 #include "cli/args.hpp"
-#include "engine/matcher.hpp"
 #include "engine/pipeline.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <exception>
 #include <iostream>
-#include <optional>
 #include <random>
 #include <string>
-#include <unordered_set>
 
 namespace {
 bool chain_enabled(const core::AppConfig& cfg, const std::string& chain_name) {
@@ -49,10 +45,7 @@ int main(int argc, char** argv) {
         }
         bip39::MnemonicGenerator generator(wl, cfg.allow_words, shuffle_seed);
 
-        engine::Matcher matcher = cfg.target_addresses_path.empty()
-                                      ? engine::Matcher(std::unordered_set<std::string>{})
-                                      : engine::Matcher(cfg.target_addresses_path);
-        engine::Pipeline pipeline(cfg, validator, generator, matcher);
+        engine::Pipeline pipeline(cfg, validator, generator);
 
         if (chain_enabled(cfg, "btc")) {
             pipeline.register_chain(std::make_unique<chains::BitcoinModule>());
@@ -63,10 +56,6 @@ int main(int argc, char** argv) {
         if (chain_enabled(cfg, "sol")) {
             pipeline.register_chain(std::make_unique<chains::SolanaModule>());
         }
-        if (chain_enabled(cfg, "ton")) {
-            pipeline.register_chain(std::make_unique<chains::TonModule>());
-        }
-
         pipeline.run();
         return 0;
     } catch (const std::exception& ex) {

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check balances for wallets stored in PostgreSQL or manual TXT file.
+"""Check balances for wallets stored in PostgreSQL.
 
 Workflow:
-1. Read wallet records from PostgreSQL result tables (`btc`) or from manual TXT.
+1. Read wallet records from PostgreSQL result tables (`btc`).
 2. Query on-chain balances by blockchain.
 3. Print `blockchain/address/mnemonic/balance` to console for each successfully checked wallet.
 4. If balance/assets > 0, append `blockchain/address/mnemonic_or_test/balance` to recovered_wallets.txt.
@@ -83,21 +83,16 @@ def parse_env_file(path: str) -> dict[str, str]:
     return env
 
 
-def resolve_config(cli_conn: str | None, cli_table: str, env_file: str) -> tuple[str, str]:
+def resolve_connection(cli_conn: str | None, env_file: str) -> str:
     env_values = parse_env_file(env_file)
 
     conn = cli_conn or env_values.get("RECOVERY_POSTGRES_CONN") or os.environ.get("RECOVERY_POSTGRES_CONN")
-    table = cli_table or env_values.get("RECOVERY_POSTGRES_TABLE") or os.environ.get("RECOVERY_POSTGRES_TABLE") or "recovered_wallets"
 
     if not conn:
         raise ValueError(
             "PostgreSQL connection string is missing. Use --postgres-conn or set RECOVERY_POSTGRES_CONN in .env/environment."
         )
-
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
-        raise ValueError(f"Invalid PostgreSQL table name: {table}")
-
-    return conn, table
+    return conn
 
 
 def run_psql(conn: str, sql: str) -> str:
@@ -143,31 +138,6 @@ def resolve_result_tables(
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
             raise ValueError(f"Invalid PostgreSQL table name for {chain}: {table}")
     return by_chain
-
-
-def parse_manual_wallets(path: str) -> list[WalletRow]:
-    wallets: list[WalletRow] = []
-    with open(path, "r", encoding="utf-8") as handle:
-        for line_no, raw_line in enumerate(handle, start=1):
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-
-            normalized = line.replace(";", ",")
-            if "," in normalized:
-                parts = [p.strip() for p in normalized.split(",", 1)]
-            else:
-                parts = normalized.split(None, 1)
-
-            if len(parts) != 2:
-                raise ValueError(
-                    f"Invalid manual wallet format at {path}:{line_no}. "
-                    "Expected 'chain,address' (also supports ';' or single space)."
-                )
-
-            blockchain, address = parts[0].lower(), parts[1]
-            wallets.append(WalletRow(row_id=None, blockchain=blockchain, address=address, mnemonic=""))
-    return wallets
 
 
 def request_json(url: str, payload: dict | None = None) -> dict:
@@ -545,21 +515,10 @@ def balance_eth(address: str) -> tuple[Decimal, str, bool]:
     return native_eth, eth_display, native_eth > 0 or has_token_assets
 
 
-def balance_ton(address: str) -> Decimal:
-    payload = request_json(f"https://toncenter.com/api/v2/getAddressBalance?address={address}")
-    if not payload.get("ok"):
-        raise RuntimeError(f"TON API error: {payload}")
-    nanotons = payload.get("result")
-    return Decimal(str(nanotons)) / Decimal("1000000000")
-
-
 def fetch_balance(blockchain: str, address: str) -> BalanceCheckResult:
     if blockchain == "btc":
         amount = balance_btc(address)
         return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=8), has_assets=amount > 0)
-    if blockchain == "ton":
-        amount = balance_ton(address)
-        return BalanceCheckResult(amount=amount, display=format_decimal(amount, precision=9), has_assets=amount > 0)
     raise ValueError(f"Unsupported blockchain value: {blockchain}")
 
 
@@ -654,17 +613,11 @@ def process_result_chain(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Read wallets from PostgreSQL or manual TXT, check balances, append non-empty wallets to output file. "
-            "In PostgreSQL mode processed rows are deleted."
+            "Read wallets from PostgreSQL, check balances, append non-empty wallets to output file, "
+            "then delete processed rows."
         )
     )
-    parser.add_argument(
-        "--manual-wallets",
-        default="",
-        help="Path to manual wallets TXT file (chain,address per line). If set, PostgreSQL is not used.",
-    )
     parser.add_argument("--postgres-conn", help="PostgreSQL connection string. Defaults to RECOVERY_POSTGRES_CONN from .env/env")
-    parser.add_argument("--postgres-table", default="", help="PostgreSQL table with wallet records (default: recovered_wallets)")
     parser.add_argument("--postgres-table-btc", default="", help="PostgreSQL BTC result table (default: recovered_wallets_btc)")
     parser.add_argument(
         "--chain",
@@ -709,14 +662,7 @@ def main() -> int:
         if EVM_TOKEN_CONTRACTS:
             print(f"[INFO] Extra EVM token contracts configured: {len(EVM_TOKEN_CONTRACTS)}")
         print(f"[INFO] Checker delay between wallets: {delay_seconds} sec")
-        if args.manual_wallets:
-            wallets = parse_manual_wallets(args.manual_wallets)
-            return process_wallets(wallets, args.output, delay_seconds)
-
-        conn, legacy_table = resolve_config(args.postgres_conn, args.postgres_table, args.env_file)
-        if args.postgres_table:
-            wallets = fetch_rows(conn, legacy_table)
-            return process_wallets(wallets, args.output, delay_seconds, conn=conn, table=legacy_table)
+        conn = resolve_connection(args.postgres_conn, args.env_file)
 
         tables_by_chain = resolve_result_tables(
             args.env_file,

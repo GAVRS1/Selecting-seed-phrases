@@ -3,7 +3,6 @@
 #include "bip39/wordlist.hpp"
 #include "chains/bitcoin_module.hpp"
 #include "core/types.hpp"
-#include "engine/matcher.hpp"
 #include "engine/pipeline.hpp"
 
 #include <filesystem>
@@ -42,8 +41,7 @@ int main() {
     cfg.max_candidates = 0;
     cfg.threads = 1;
 
-    engine::Matcher matcher(std::unordered_set<std::string>{"non-existing"});
-    engine::Pipeline pipeline(cfg, validator, generator, matcher);
+    engine::Pipeline pipeline(cfg, validator, generator);
     pipeline.register_chain(std::make_unique<chains::BitcoinModule>());
     pipeline.run();
 
