@@ -138,7 +138,6 @@ async function main(): Promise<void> {
     const allWalletsForSingleNetwork: WalletData[] = [];
     let singleNetworkTokenHeaders: string[] = [];
     const allNetworksResultsByNetwork = new Map<Network, AllNetworksCheckResult>();
-    const idsToDelete = new Set<number>();
 
     while (true) {
       const wallets = await repo.fetchBatch(lastProcessedId);
@@ -183,7 +182,14 @@ async function main(): Promise<void> {
         appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
         ui.showSuccess(`Пачка #${batchNumber}: добавлено в result/recovered_wallets.txt ${recoveredRows.length} кошельков.`);
 
-        getDeletableIdsSingleNetwork(wallets, results).forEach((id) => idsToDelete.add(id));
+        const batchIdsToDelete = getDeletableIdsSingleNetwork(wallets, results);
+        if (appConfig.deleteProcessedWallets && batchIdsToDelete.length > 0) {
+          const deleted = await repo.deleteBatch(batchIdsToDelete);
+          ui.showSuccess(`Пачка #${batchNumber}: удалено из БД ${deleted} кошельков.`);
+        } else if (appConfig.deleteProcessedWallets) {
+          ui.showWarning(`Пачка #${batchNumber}: удаление включено, но подходящих кошельков не найдено.`);
+        }
+
         allSingleNetworkResults.push(...results);
         allWalletsForSingleNetwork.push(...wallets);
       } else {
@@ -208,7 +214,13 @@ async function main(): Promise<void> {
         appendLines(RECOVERED_OUTPUT_PATH, recoveredRows);
         ui.showSuccess(`Пачка #${batchNumber}: добавлено в result/recovered_wallets.txt ${recoveredRows.length} кошельков.`);
 
-        getDeletableIdsAllNetworks(wallets, allResults).forEach((id) => idsToDelete.add(id));
+        const batchIdsToDelete = getDeletableIdsAllNetworks(wallets, allResults);
+        if (appConfig.deleteProcessedWallets && batchIdsToDelete.length > 0) {
+          const deleted = await repo.deleteBatch(batchIdsToDelete);
+          ui.showSuccess(`Пачка #${batchNumber}: удалено из БД ${deleted} кошельков.`);
+        } else if (appConfig.deleteProcessedWallets) {
+          ui.showWarning(`Пачка #${batchNumber}: удаление включено, но подходящих кошельков не найдено.`);
+        }
       }
     }
 
@@ -232,12 +244,6 @@ async function main(): Promise<void> {
       await exporter.exportAllNetworks(Array.from(allNetworksResultsByNetwork.values()), 'all_networks_balances.csv');
     }
 
-    if (appConfig.deleteProcessedWallets && idsToDelete.size > 0) {
-      const deleted = await repo.deleteBatch(Array.from(idsToDelete));
-      ui.showSuccess(`Удалено из БД: ${deleted} кошельков.`);
-    } else {
-      ui.showWarning('Удаление включено, но из БД ничего не удалено.');
-    }
   } finally {
     await repo.close();
   }
