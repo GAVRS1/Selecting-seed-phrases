@@ -5,6 +5,7 @@ import { WalletChecker } from './services/WalletChecker';
 import { AllNetworksChecker } from './services/AllNetworksChecker';
 import { DatabaseWalletRepository } from './services/DatabaseWalletRepository';
 import { AllNetworksCheckResult, Network, WalletBalance, WalletData } from './types';
+import { CONFIG } from './config';
 import fs from 'fs';
 import path from 'path';
 
@@ -62,6 +63,44 @@ function collectRecoveredFromAllNetworks(allResults: AllNetworksCheckResult[], w
     .map((wallet) =>
       buildRecoveredLine(wallet, formatEthBalance(nativeBalanceByAddress.get(wallet.address.toLowerCase())))
     );
+}
+
+function hasWalletErrors(result: WalletBalance): boolean {
+  return Boolean(result.errors && result.errors.size > 0);
+}
+
+function getDeletableIdsSingleNetwork(wallets: WalletData[], results: WalletBalance[]): number[] {
+  const successAddresses = new Set(
+    results
+      .filter((result) => !hasWalletErrors(result))
+      .map((result) => result.wallet.address.toLowerCase())
+  );
+
+  return wallets
+    .filter((wallet) => successAddresses.has(wallet.address.toLowerCase()))
+    .map((wallet) => wallet.id)
+    .filter((id): id is number => typeof id === 'number');
+}
+
+function getDeletableIdsAllNetworks(wallets: WalletData[], allResults: AllNetworksCheckResult[]): number[] {
+  const expectedNetworks = Object.values(Network).filter((network) => Boolean(CONFIG[network])).length;
+  const hasMissingNetworkResults = allResults.length < expectedNetworks;
+
+  return wallets
+    .filter((wallet) => {
+      const address = wallet.address.toLowerCase();
+      const walletResults = allResults
+        .map((networkResult) => networkResult.results.find((result) => result.wallet.address.toLowerCase() === address))
+        .filter((result): result is WalletBalance => Boolean(result));
+
+      if (hasMissingNetworkResults || walletResults.length !== expectedNetworks) {
+        return false;
+      }
+
+      return walletResults.every((result) => !hasWalletErrors(result));
+    })
+    .map((wallet) => wallet.id)
+    .filter((id): id is number => typeof id === 'number');
 }
 
 async function main(): Promise<void> {
@@ -130,10 +169,7 @@ async function main(): Promise<void> {
         ui.showWarning('Кошельки с положительным ETH балансом не найдены.');
       }
 
-      checkedWalletIds = wallets
-        .filter((wallet) => results.some((r) => r.wallet.address.toLowerCase() === wallet.address.toLowerCase()))
-        .map((wallet) => wallet.id)
-        .filter((id): id is number => typeof id === 'number');
+      checkedWalletIds = getDeletableIdsSingleNetwork(wallets, results);
     } else {
       const allChecker = new AllNetworksChecker(wallets, configManager, ui);
       const allResults = await allChecker.checkAllNetworks();
@@ -146,16 +182,14 @@ async function main(): Promise<void> {
         ui.showWarning('Кошельки с положительным ETH балансом не найдены.');
       }
 
-      checkedWalletIds = wallets
-        .map((wallet) => wallet.id)
-        .filter((id): id is number => typeof id === 'number');
+      checkedWalletIds = getDeletableIdsAllNetworks(wallets, allResults);
     }
 
     if (appConfig.deleteProcessedWallets && checkedWalletIds.length > 0) {
       const deleted = await repo.deleteBatch(checkedWalletIds);
       ui.showSuccess(`Удалено из БД: ${deleted} кошельков одной пачкой.`);
     } else {
-      ui.showWarning('Удаление отключено или нет id для удаления.');
+      ui.showWarning('Удаление отключено, нет id для удаления или кошельки содержат ошибки проверки.');
     }
   } finally {
     await repo.close();
